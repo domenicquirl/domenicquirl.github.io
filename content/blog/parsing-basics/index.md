@@ -707,7 +707,7 @@ Let's actually fix the spans now:
 
         // NEW!
         // Because `valid_token` advances our position, 
-        // we need to reset it to after the errornous token.
+        // we need to reset it to after the erroneous token.
         let len = len as u32;
         self.position = start + len;
         Token {
