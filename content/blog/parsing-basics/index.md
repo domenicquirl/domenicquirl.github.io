@@ -514,7 +514,7 @@ pub(crate) const fn unambiguous_single_char(c: char) -> Option<TokenKind> {
     })
 }
 ```
-The method is essentially the revers of the `Display` implementation, but only for tokens that are one character long _and cannot be the start of anything else_.
+The method is essentially the reverse of the `Display` implementation, but only for tokens that are one character long _and cannot be the start of anything else_.
 So it includes `+` and most of the brackets, but, for example, it does not include `=`, because of the possible `==`, and `/`, because that can also be the start of a comment.
 Angle brackets are absent because they can also be the start of `<=` and `>=`[^shift-ops]<span id="fn-shift-ops"></span>.
 
