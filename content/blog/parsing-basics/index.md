@@ -650,7 +650,7 @@ impl<'input> Iterator for Lexer<'input> {
 At this point, we should be able to adapt our tests to pass the input to the lexer and they should pass as before.
 Note that all of our `Lexer` methods will now take `&mut self`, because we have to update our `position`.
 You'll have to make the `lexer` variables `mut` in the tests so everything keeps working.
-```rust
+```rust,hl_lines=6-7 15-16
 // In tests/it.rs
 
 #[test]
@@ -671,7 +671,7 @@ fn unknown_input() {
 }
 ```
 Let's actually fix the spans now:
-```rust
+```rust,hl_lines=12-14 26 34-38
 // In lexer/mod.rs
 
 /// Returns `None` if the lexer cannot find a token at the start of `input`.
@@ -914,7 +914,7 @@ pub(crate) fn get_rules() -> Vec<Rule> {
 }
 ```
 In the lexer, we plug in the new rules where the input is neither whitespace nor clearly a single character:
-```rust
+```rust,hl_lines=7 17
 // In lexer/mod.rs
 
 pub struct Lexer<'input> {
@@ -1155,7 +1155,7 @@ They do match as identifiers as well, but their rules are declared earlier than 
 #### Some Source Text
 
 We'll extend that last text with a few checks for identifiers to illustrate how to get back at the input string from a token:
-```rust
+```rust,hl_lines=8 11
 #[test]
 fn struct_def() {
     // `input`, `lexer` and `tokens`, unchanged

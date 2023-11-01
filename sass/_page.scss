@@ -55,6 +55,28 @@ $largescreen-width: 1050px;
             span {
                 white-space: pre-wrap;
             }
+
+            mark {
+                display: block;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+
+                td {
+                    padding: 0;
+                }
+
+                td:nth-of-type(1) {
+                    text-align: center;
+                    user-select: none;
+                }
+            }
+        }
+
+        pre[data-linenos] {
+            padding: 1rem 0;
         }
 
         blockquote {
@@ -64,8 +86,20 @@ $largescreen-width: 1050px;
             border-radius: 3px;
         }
 
+        // Syntax Highlighting
+        mark {
+            color: inherit;
+
+            @media (prefers-color-scheme: light) {
+                background-color: #eaeaea;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                background-color: #373832;
+            }
+        }
+
         code {
-            display: inline-block;
             vertical-align: middle;
             padding: 0.1em 0.3em;
             border-radius: 3px;
