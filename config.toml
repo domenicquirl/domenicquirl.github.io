@@ -1,6 +1,7 @@
 # The URL the site will be built for
 base_url = "https://domenicquirl.github.io/"
 title    = "Quirl"
+author   = "Domenic Quirl"
 
 # Whether to automatically compile all Sass files in the sass directory
 compile_sass = true
@@ -11,7 +12,12 @@ build_search_index = true
 [markdown]
 # Whether to do syntax highlighting
 # Theme can be customised by setting the `highlight_theme` variable to a theme supported by Zola
-highlight_code = false
+highlight_code = true
+highlight_theme = "css"
+highlight_themes_css = [
+    { theme = "monokai", filename = "syntax-theme-dark.css" },
+    { theme = "OneHalfLight", filename = "syntax-theme-light.css" },
+]
 
 [extra]
 # Put all your custom variables here

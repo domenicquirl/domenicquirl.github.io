@@ -9,8 +9,6 @@
 @import "normalize";
 @import "html";
 @import "page";
-@import "prism-day";
-@import "prism-night";
 
 // Main logo
 img#logo {
@@ -191,6 +189,7 @@ feedback {
                 opacity: 1.0;
                 transition: left 0.5s, opacity 0.5s;
             }
+
             // a {}
             display: block;
             height: 15px;
@@ -217,19 +216,48 @@ sup.target {
 }
 
 // Looks ugly otherwise
-h4#textual-types-ref sup.target { font-size: 60%; top: -6px; }
-h4#numeric-types-ref sup.target { font-size: 60%; top: -6px; }
+h4#textual-types-ref sup.target {
+    font-size: 60%;
+    top: -6px;
+}
+
+h4#numeric-types-ref sup.target {
+    font-size: 60%;
+    top: -6px;
+}
 
 // Various CSS tricks for hover effects
-h1:hover sup.target { display: inline; }
-h2:hover sup.target { display: inline; }
-h3:hover sup.target { display: inline; }
-h4:hover sup.target { display: inline; }
+h1:hover sup.target {
+    display: inline;
+}
 
-h1:hover feedback { display: inline; }
-h2:hover feedback { display: inline; }
-h3:hover feedback { display: inline; }
-h4:hover feedback { display: inline; }
+h2:hover sup.target {
+    display: inline;
+}
+
+h3:hover sup.target {
+    display: inline;
+}
+
+h4:hover sup.target {
+    display: inline;
+}
+
+h1:hover feedback {
+    display: inline;
+}
+
+h2:hover feedback {
+    display: inline;
+}
+
+h3:hover feedback {
+    display: inline;
+}
+
+h4:hover feedback {
+    display: inline;
+}
 
 
 
@@ -257,7 +285,7 @@ footnotes {
     }
 }
 
-.color-header.red  {
+.color-header.red {
     th {
         background-color: rgb(235, 156, 162);
         border-color: rgb(200, 126, 140);

@@ -33,10 +33,12 @@ $largescreen-width: 1050px;
         a {
             color: #4183c4;
             text-decoration: none;
+
             &:hover {
                 text-decoration: underline;
             }
         }
+
         hr {
             height: 1px;
             padding: 0;
@@ -45,53 +47,61 @@ $largescreen-width: 1050px;
             background-color: #e7e7e7;
             border: none;
         }
-        pre { 
+
+        pre {
             padding: 1rem;
             overflow: auto;
+
             span {
                 white-space: pre-wrap;
             }
         }
+
         blockquote {
             margin: 0;
             margin-bottom: .85em;
             padding: 10px 10px 1px 10px;
-	    	border-radius: 3px;
+            border-radius: 3px;
         }
+
         code {
-            background: #272822;
-            color: #f1f1f1;
             display: inline-block;
             vertical-align: middle;
             padding: 0.1em 0.3em;
             border-radius: 3px;
             font-size: 0.835em;
             font-family: "Fira Code", Consolas, "Ubuntu Mono", Menlo, "DejaVu Sans Mono", monospace;
-	font-variant-ligatures: none;
+            font-variant-ligatures: none;
         }
+
         iframe {
             border: 0;
         }
+
         table {
             width: 100%;
             margin: 0 auto;
             border-collapse: collapse;
             border-color: #cccccc;
+
             thead {
                 th {
                     font-weight: bold;
                     border-bottom: #bababa 1px solid;
                 }
+
                 td {
                     font-weight: 700;
                     border: none;
                 }
             }
+
             td {
                 padding: 3px 5px 3px 20px;
             }
 
         }
+
         font-size: 1.8rem;
         word-wrap: break-word;
         line-height: 1.5;
@@ -101,23 +111,29 @@ $largescreen-width: 1050px;
         margin: 0 auto;
         margin-bottom: 20px;
         padding: 0 15px 40px;
+
         p {
             margin-top: 45px;
             margin-bottom: 0.85em;
             display: block;
             hyphens: auto;
         }
+
         li {
             hyphens: auto;
         }
-        img, img.horizontal {
+
+        img,
+        img.horizontal {
             width: 95%;
             height: auto;
         }
+
         img.vertical {
             width: 75%;
             height: auto;
         }
+
         .image-include {
             display: flex;
             justify-content: center;
@@ -137,6 +153,7 @@ $largescreen-width: 1050px;
                 background: hsl(0, 0%, 80%);
 
             }
+
             tbody {
                 tr:nth-child(2n) {
                     background: hsl(0, 0%, 97%);
@@ -162,6 +179,7 @@ $largescreen-width: 1050px;
             thead {
                 background: hsl(0, 0%, 20%);
             }
+
             tbody {
                 tr:nth-child(2n) {
                     background: hsl(0, 0%, 18%);
@@ -174,8 +192,8 @@ $largescreen-width: 1050px;
         float: left;
         line-height: normal;
     }
-    
-    .footnote-definition { 
+
+    .footnote-definition {
         padding-bottom: 20px;
 
         p {
@@ -223,23 +241,23 @@ $largescreen-width: 1050px;
         font-size: 9px;
     }
 
-    fixed-2-column > table tr td:nth-child(1) {
+    fixed-2-column>table tr td:nth-child(1) {
         width: 235px;
     }
 
-    fixed-3-column > table tr td:nth-child(1) {
+    fixed-3-column>table tr td:nth-child(1) {
         width: 235px;
     }
 
-    fixed-2-column.extra-wide > table tr td:nth-child(1) {
+    fixed-2-column.extra-wide>table tr td:nth-child(1) {
         width: 300px;
     }
 
-    fixed-3-column.extra-wide > table tr td:nth-child(1) {
+    fixed-3-column.extra-wide>table tr td:nth-child(1) {
         width: 300px;
     }
 
-    fixed-3-column > table tr td:nth-child(2) {
+    fixed-3-column>table tr td:nth-child(2) {
         text-align: left;
         width: 40px;
         padding-left: 5px;
@@ -258,23 +276,23 @@ $largescreen-width: 1050px;
         transform-origin: top left;
     }
 
-    fixed-2-column > table tr td:nth-child(1) {
+    fixed-2-column>table tr td:nth-child(1) {
         width: 235px;
     }
 
-    fixed-3-column > table tr td:nth-child(1) {
+    fixed-3-column>table tr td:nth-child(1) {
         width: 235px;
     }
 
-    fixed-2-column.extra-wide > table tr td:nth-child(1) {
+    fixed-2-column.extra-wide>table tr td:nth-child(1) {
         width: 300px;
     }
 
-    fixed-3-column.extra-wide > table tr td:nth-child(1) {
+    fixed-3-column.extra-wide>table tr td:nth-child(1) {
         width: 300px;
     }
 
-    fixed-3-column > table tr td:nth-child(2) {
+    fixed-3-column>table tr td:nth-child(2) {
         text-align: left;
         width: 40px;
         padding-left: 5px;
