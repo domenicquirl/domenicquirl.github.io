@@ -63,7 +63,7 @@ This starting point becomes the _root_ of the syntax tree.
 When parsing a program, it's all about piecing together more and more parts of the tree, branching out every time a part of the program is made up of multiple smaller parts (so, always).
 Below is an illustration of a syntax tree for a file that contains a function with a variable assignment:
 
-{{ include_image(path="blog/parsing-basics/tree.png", class="horizontal") }}
+{{ include_image(path="./blog/parsing-basics/tree.png", class="horizontal") }}
 
 ### "Excuse me, there's a Lexer in your Parser"
 

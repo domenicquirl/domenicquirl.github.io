@@ -1,3 +1,4 @@
+{% set image = resize_image(path=path, width=5000, height=5000, op='fit') %}
 <div class="image-include">
-    <img src="{{ resize_image(path=path, width=5000, height=5000, op='fit') }}" class="{{class}}" />
+    <img src="{{ image.url }}" class="{{class}}" />
 </div>
