@@ -78,12 +78,13 @@ footer::after {
 
 .footer-name {
     float: left;
-    width: 50%;
+    width: 33%;
+    transform: translateY(15%);
 }
 
 .footer-socials {
     float: left;
-    width: 50%;
+    width: 33%;
 }
 
 .socials-list {

@@ -953,9 +953,64 @@ impl ApiRouter {
 ```
 
 You can try our router out by running the `working` example in the repository, where you will finally be able to have your one-liners converted to uppercase and lowercase and be trimmed by the same service.
+Time to rest and enjoy our success.
 
-## Bonus: I've Been Hiding More Errors
-closure type annotations
+## Bonus: More Errors I've Been Avoiding
+
+If you've made it this far, congratulations!
+I hope your brain is still mostly intact and your head hasn't exploded.
+There's one more version of the implementation in the repository, though, that demonstrates an error that one might run into if not copying and pasting the exact code from the this post / the working solution: `missing_closure_type`.
+
+In the above code for constructing a `BoxedHandler`, I wrote out the type of the `request_data` parameter of the generic handler:
+
+```rust
+let handler = move |request_data: &[u8]| -> Result<Vec<u8>>
+```
+
+This may seem arbitrary or like it's only done to be more explicit in the example, but it's not.
+Here's what happens if you leave it to the compiler to infer the type of `request_data`:
+
+```
+error[E0308]: mismatched types
+   --> src\missing_closure_type.rs:119:14
+    |
+119 |         Self(Box::new(handler))
+    |              ^^^^^^^^^^^^^^^^^ 
+    |              one type is more general than the other
+    |
+    = note: expected trait `for<'a> FnMut<(&'a [u8],)>`
+               found trait `FnMut<(&[u8],)>`
+note: this closure does not fulfill the lifetime requirements
+   --> src\missing_closure_type.rs:111:23
+    |
+111 |         let handler = move |request_data| -> Result<Vec<u8>> {
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: consider specifying the type of the closure parameters
+    |
+111 |         let handler = |request_data: &_| {
+    |                       ~~~~~~~~~~~~~~~~~~
+
+error: implementation of `FnOnce` is not general enough
+   --> src\missing_closure_type.rs:119:14
+    |
+119 |         Self(Box::new(handler))
+    |              ^^^^^^^^^^^^^^^^^ implementation of `FnOnce` 
+    |                                is not general enough
+    |
+    = note: closure with signature 
+            `fn(&'2 [u8]) -> std::result::Result<Vec<u8>, std::string::String>` 
+            must implement `FnOnce<(&'1 [u8],)>`, for any lifetime `'1`...
+    = note: ...but it actually implements `FnOnce<(&'2 [u8],)>`, 
+            for some specific lifetime `'2`
+```
+
+If you use an IDE with `rust-analyzer`, it will infer `request_data` to be of type `&[u8]`.
+Even the compiler infers `handler` to be of a type that implements `FnMut<(&[u8],)>`.
+But, apparently, the compiler also picks some concrete lifetime for the reference instead of "any lifetime", i.e., `for<'a> FnMut<(&'a [u8],)>`.
+
+We've seen this error already when we were working with `Deserialize<'de>`, we know what it means.
+But I neither know why the compiler infers one over the other here, nor how I would explicitly specify that I want one or the other (aside from having a nameable lifetime in scope that the reference should use).
+If you know more, please get in touch.
 
 ---
 [^compiler-errors]: While I think some of the errors were some of the more cryptic ones I have seen so far, they still state fairly clearly what the problem is - if you know what they are talking about at all. Lifetimes and higher-ranked bounds are a tricky area to begin with, so I don't particularly fault the compiler and refrained from attributing them with things like "confusing", or "weird", or the above "cryptic" and I am not trying to summon Esteban.<a href="#fn-compiler-errors" class="footnote-backref" role="doc-backlink">↩︎</a>
