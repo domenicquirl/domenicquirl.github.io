@@ -568,7 +568,7 @@ impl<F: for<'req> HandlerOn<'req>> Handler for F {}
 ```
 
 We're saying we want the handler to be a function that takes request of the `Api` associated type, which is the `A: Api` in the first `impl`.
-The compiler isn't very happy:
+The compiler isn't very happy (feature `multiple_handlers3`):
 
 ```
 error[E0223]: ambiguous associated type
@@ -587,7 +587,7 @@ help: if there were a trait named `Example` with associated type `Request`
 ```
 
 Because both `Self` and `Self::Api` may implement multiple traits, and any (or all) of these traits could have associated types named `Api` or `Request`, the compiler wants us to be specific and say that we mean the `Api` associated type from `HandlerOn` and the `Request` associated type from `Api` (which it doesn't know, so it gives us an arbitrary `Example` trait).
-Fine, let's write what it says even though it is positively hideous:
+Fine, let's write what it says even though it is positively hideous (`multiple_handlers2`):
 
 ```rust
 pub trait HandlerOn<'req>:
@@ -653,7 +653,7 @@ So while we _mention_ `A` in a `where` bound, we don't constrain anything to `A`
 
 There's another problem as well: because we need these types to write the `where` bound, we need to go through the implementing type `Self` to get them.
 We want a function that takes the `Request` type for the API it is a handler for (otherwise it wouldn't make sense), which is `Self::Api::Request` (same for `Reply`).
-However, this makes the `Handler` and `HandlerOn` traits no longer object safe, which means we cannot have a `dyn Handler`, which we wanted to store in our router:
+However, this makes the `Handler` and `HandlerOn` traits no longer object safe, which means we cannot have a `dyn Handler`, which we wanted to store in our router (`multiple_handlers4`):
 
 ```
 error[E0038]: the trait `Handler` cannot be made into an object
@@ -702,7 +702,259 @@ It won't be enough to move the `Api` generic to somewhere else, we'll need to _e
 
 ### Calling Upon The Dark Arts
 
-## Bonus: I've Been Hiding Something
+The chances to figure this out on our own, on the fly, are fairly low.
+Let's instead turn back to our original inspiration for building the router, the `axum` web framework.
+They're doing it, so they've got to know a way to achieve what we want.
+
+The relationship between `axum`'s diverse set of routing and handler types is quite complex, and reading the codebase is additionally complicated by its deep integration with the `tower` service framework.
+Due to the latter, conversions often involve an extra step to go through some type that implements a `tower` trait and you need to close the loop through the `tower` implementation back into `axum` code.
+If you think a class diagram will help you to follow along, you can find one for at least the `axum` side of things in [this reply on URLO](https://users.rust-lang.org/t/common-data-type-for-functions-with-different-parameters-e-g-axum-route-handlers/90207/6).
+
+When you call `.route` on an `axum::Router`, the first thing that happens is actually that you will be delegated to `PathRouter`.
+This is because `axum` routers additionally support several variations of fallback routes, so `PathRouter` is what implements the "regular" routing based on the URL paths (or API names, for us).
+
+The `PathRouter` doesn't do anything special when you add a new route, it just figures out whether it already knows that route and either updates or inserts an `Endpoint` for the new route.
+Let's look at the `MethodRouter` that is added instead, since it seems to be the actual request handler and thus correspond most to our `Handler` trait.
+
+When we call `axum::method_routing::get(our_handler)`, we end up in a macro that calls an `axum` function called [`on`](https://docs.rs/axum/latest/axum/routing/method_routing/fn.on.html).
+This constructs a new `MethodRouter` and delegates to _it's_ [`on` method](https://docs.rs/axum/latest/axum/routing/method_routing/struct.MethodRouter.html#method.on) which then delegates further to the internal `fn on_endpoint`.
+But before that, a transformation happens: the actual `our_handler` function passed to `get` is converted into a type whose name includes "boxed" _twice_:
+
+```rust
+self.on_endpoint(
+    filter,
+    //                             our `our_handler` function vvvvvvv
+    MethodEndpoint::BoxedHandler(BoxedIntoRoute::from_handler(handler)),
+)
+```
+
+`on_endpoint` itself then just stores the converted handler inside the `MethodRouter`.
+
+What exactly are those "boxed" types? 
+Well, `axum` has [an entire module](https://docs.rs/axum/0.6.20/src/axum/boxed.rs.html) of them and the constructor that is used here, `BoxedIntoRoute::from_handler`, as a very interesting signature:
+
+```rust
+pub(crate) struct BoxedIntoRoute<S, B, E>(Box<dyn ErasedIntoRoute<S, B, E>>);
+
+impl<S, B> BoxedIntoRoute<S, B, Infallible>
+where
+    S: Clone + Send + Sync + 'static,
+    B: Send + 'static,
+{
+    pub(crate) fn from_handler<H, T>(handler: H) -> Self
+    where
+        H: Handler<T, S, B>,
+        T: 'static,
+        B: HttpBody,
+    {
+        Self(Box::new(MakeErasedHandler {
+            handler,
+            into_route: |handler, state| {
+                Route::new(Handler::with_state(handler, state))
+            }
+        }))
+    }
+}
+```
+
+There's a lot of generic parameters going on, but what's interesting for us is that, somehow, this function takes a `Handler` of type `H` (`Handler` in `axum` is what is implemented for `async` functions that can handle web requests like `our_handler`, so it's what _actually_ corresponds to our own `Handler`) and returns a `BoxedIntoRoute` where `H` does not appear at all!
+And, again somehow, the `trait ErasedIntoRoute` (which also doesn't mention `H`) has a `fn into_route` that returns a `Route<B, E>` which _also_ doesn't mention `H` but must end up calling the correct handler.
+
+The technique that is used here is quite clever:
+The _actual_ type, `MakeErasedHandler`, _is_ generic over `H`.
+In fact, the handler is stored right there inside the struct! 
+The definition of `MakeErasedHandler` is
+
+```rust
+pub(crate) struct MakeErasedHandler<H, S, B> {
+    pub(crate) handler: H,
+    pub(crate) into_route: fn(H, S) -> Route<B>,
+}
+```
+
+However, by also storing _the implementation_ of `into_route` as a function inside the struct, by pre-constructing this implementation in `from_handler` above, when the `dyn ErasedIntoRoute` is used later the code doesn't need to know about the type of `H` anymore.
+
+We still need to find out where and how the call to the handler actually happens, though, so let's keep looking.
+When we check the implementation of `Route::new`, we are greeted by another "boxed" type:
+
+```rust
+pub struct Route<B = Body, E = Infallible>(
+    BoxCloneService<Request<B>, Response, E>
+);
+
+impl<B, E> Route<B, E> {
+    pub(crate) fn new<T>(svc: T) -> Self
+    where
+        T: Service<Request<B>, Error = E> + Clone + Send + 'static,
+        T::Response: IntoResponse + 'static,
+        T::Future: Send + 'static,
+    {
+        Self(BoxCloneService::new(
+            svc.map_response(IntoResponse::into_response),
+        ))
+    }
+}
+```
+
+This time, `BoxCloneService` comes not from `axum` but from `tower`, but they're using the same trick (just with one more layer of indirection):
+the service is turned into a trait object so the `T` type disappears, and while they're at it `T::Future` is turned into a type-erased [`futures_util::future::BoxFuture`](https://docs.rs/futures-util/0.3.29/futures_util/future/type.BoxFuture.html) as well, which is just a new name for `Box<dyn Future>`.
+
+### Back to Our Own ~~Problems~~ Handlers
+
+What we have learned (hopefully maybe) from all this type chasing is that we can erase generic type parameters by turning things into trait objects.
+The thing is, we were already trying to do that, and failing!
+I'll spare you further increasingly desperate code snippets and their corresponding compiler errors, but believe me that it's simply not enough to turn our concrete `Handler` into a `dyn Handler`.
+Not as long as our handlers want to refer to a specific `Request` and `Reply` type.
+
+We've missed the piece of code in `axum` that turns an `async` function with specific argument and return types (Rust types!) into a more handler for HTTP requests that returns HTTP responses.
+
+That's because it isn't in any of the code files we've looked at so far.
+It also doesn't appear in the class diagram that I linked above (or, well, only indirectly).
+But it _is_ how `axum` defines the interface for their handlers:
+
+```rust
+pub trait Handler<T, S, B = Body>: Clone + Send + Sized + 'static {
+    type Future: Future<Output = Response> + Send + 'static;
+
+    // Required method
+    fn call(self, req: Request<B>, state: S) -> Self::Future;
+
+    // Cut: some provided methods
+}
+```
+
+The `req: Request<B>` here comes straight from the `http` crate, and the `Response` that is the `Output` of the returned `Future` is from `http` as well, `axum` just supplies a default for their type parameters.
+
+If we look at [how `axum` implements `Handler` for basically any `async` function](https://docs.rs/axum/0.6.20/src/axum/handler/mod.rs.html#217) (be warned, it's a macro), we'll see something that by now should seem familiar:
+
+```rust
+impl</* bunch of parameters */> Handler</* the same, really */> for F
+where
+    // `F` is a function
+    F: FnOnce(/* generics */) -> Fut + Clone + Send + 'static,
+    // that returns a future
+    Fut: Future<Output = Res> + Send,
+    // whose result can be turned into an HTTP response
+    Res: IntoResponse,
+    // and whose inputs can be extracted from a request
+    /* generics */: FromRequest<S, B, M> + Send,
+{
+    type Future = Pin<Box<dyn Future<Output = Response> + Send>>;
+
+    fn call(self, req: Request<B>, state: S) -> Self::Future {
+        Box::pin(async move {
+            // extract arguments to `F` from `req`
+            let (mut parts, body) = req.into_parts();
+            let state = &state;
+
+            $(
+                let $ty = match $ty::from_request_parts(&mut parts, state).await {
+                    Ok(value) => value,
+                    Err(rejection) => return rejection.into_response(),
+                };
+            )*
+
+            let req = Request::from_parts(parts, body);
+
+            let $last = match $last::from_request(req, state).await {
+                Ok(value) => value,
+                Err(rejection) => return rejection.into_response(),
+            };
+
+            // call `F` is with the extracted arguments
+            let res = self($($ty,)* $last,).await;
+
+            // convert the result back into a `Response`
+            res.into_response()
+        })
+    }
+}
+```
+
+Calling the handler with an HTTP request constructs a `Future` - a separate function - which
+ - extracts any arguments to the handler from the request,
+ - calls the handler with those arguments, and
+ - converts its response into an HTTP response.
+
+And the type of `Future` is `Pin<Box<dyn Future<Output = Response>>` - a `Future` trait object that hides the type of `F` because it is wrapped in "some future" and returns a generic HTTP response.
+
+_The_ important insight here is _when_ we need to do all of the type erasure and wrapping into closures / `async` functions: 
+it needs to happen when the original type / function is still accessible to us.
+
+It's not really about the trait object so much and more about the fact that, in the same place, we're able to
+ - take a generic request
+ - convert it to Rust types because we have access to the argument types of the function and their `FromRequest` implementations
+ - call the actual function
+ - convert the result back because we have access to the return type and its `IntoResponse` implementation
+
+I want to emphasize that, of these, only the function itself is a _value_.
+The reason we can convert the arguments and the result is not because they are already in scope - they are not, they are extracted from the request and computed by the handler.
+Instead, what makes things work is that, **at compile time**, we can refer to the argument and result _types_ and tell the compiler that "we want to call _their_ conversion methods please".
+
+### So Let's Do It!
+
+What does this mean for us?
+Well, here's all we need to get us a type-erased handler that still converts everything correctly:
+
+```rust
+type BoxedRequestHandler = Box<dyn FnMut(&[u8]) -> Result<Vec<u8>>>;
+struct BoxedHandler(BoxedRequestHandler);
+
+impl BoxedHandler {
+    fn from_handler<A: Api, H: Handler<A>>(mut handler: H) -> Self
+    where
+        H: 'static,
+    {
+        let handler = move |request_data: &[u8]| -> Result<Vec<u8>> {
+            let request: A::Request<'_> = serde_json::from_slice(request_data)
+                .map_err(|e| format!("Deserialize error: {e}"))?;
+            let reply = handler(request);
+            let reply = serde_json::to_vec_pretty(&reply)
+                .map_err(|e| format!("Serialize error: {e}"))?;
+            Ok(reply)
+        };
+        Self(Box::new(handler))
+    }
+}
+```
+
+Let's break it down again:
+`BoxedHandler` is a handler not for any specific API type(s), but that converts from bytes to bytes (`&[u8]` in, `Vec<u8>` out).
+We can construct a `BoxedHandler` for a concrete `A: Api` because `from_handler` knows what `A` is (since it's a generic parameter).
+This means we can refer to _the type_ `A` from within the constructed closure, which means we can convert to and from the correct request and response types.
+
+In a way, we are taking the knowledge about `A` with us into the future, from when the `BoxedHander` is built to when we call the contained function, by having the compiler insert a call to the correct trait implementation when it generates the closure.
+Yeah.
+Let that sink in.
+
+The only other change we need to make is to `register_handler`, which needs to turn the given function into a `BoxedHandler` to store it:
+
+```rust
+pub struct ApiRouter {
+    handlers: HashMap<&'static str, BoxedHandler>,
+}
+
+impl ApiRouter {
+    /// Add a new handler for API requests of type `A`.
+    ///
+    /// This will make the router route all requests of type `A` to the given 
+    /// `handler` if the request data can be successfully deserialized into 
+    /// [`A::Request`](Api::Request). The `handler` may be a function name or 
+    /// a closure.
+    pub fn register_handler<A: Api, H: Handler<A>>(mut self, handler: H) -> Self
+    where
+        H: 'static,
+    {
+        self.handlers
+            .insert(A::NAME, BoxedHandler::from_handler(handler));
+        self
+    }
+}
+```
+
+You can try our router out by running the `working` example in the repository, where you will finally be able to have your one-liners converted to uppercase and lowercase and be trimmed by the same service.
+
+## Bonus: I've Been Hiding More Errors
 closure type annotations
 
 ---
