@@ -42,7 +42,7 @@ To run an example, run `cargo run --example <attempt> --features <attempt>`.[^au
 
 ## The Setup
 
-To avoid getting side-tracked by the underlying protocol, let's just say we have a few services, some generic `Requester` type for sending protocol requests to these services, and a complimentary `Responder` type for receiving and answering requests from a `Requester` (conveniently, this also means I can cheat and not actually build on _any_ protocol for the examples).
+To avoid getting side-tracked by the underlying protocol, let's just say we have a few services, some generic `Requester` type for sending protocol requests to these services from clients, and a complimentary `Responder` type for receiving and answering requests from a `Requester` (conveniently, this also means I can cheat and not actually use any protocol for the examples).
 Our basic interface thus looks like this:
 
 ```rust
@@ -111,7 +111,7 @@ impl Requester {
 }
 ```
 
-As a bonus, we can utilize the fact that we are now dealing with `FooRequest`s instead of `Message`s, which we know is the request type of service `foo_service`, to automatically figure out that the request needs to be routed to `foo_service` in the `Requester` - no `for_service` needed anymore:
+As a bonus, we can utilize the fact that we are now dealing with `FooRequest`s instead of `Message`s, which we know is the request type of service `foo_service`, to automatically figure out that the request needs to be routed to `foo_service` in the `Requester`:
 
 ```rust,hl_lines=2-5 23-26
 pub trait Api { 
@@ -149,9 +149,261 @@ impl Requester {
 }
 ```
 
-TODO: serve_forever
+Look ma, no `for_service` anymore!
+However, we're missing a counterpart on the `Responder` side.
+We can implement a similar workflow to the `Requester` by running the same steps in reverse, in a loop so the `Responder` fetches and responds to one request after the other.
+Instead of the name of the service that takes the request (which, on the service's side, is just the `Requester` itself), our endpoint takes the _logical_ message handler.
+That is, you can pass a function that takes an `Api::Request` and returns an `Api::Reply` and the `Responder` will continuously feed it with new requests that it has already decoded and take care of serializing and wrapping the `Reply` as well:[^return-errors]<span id="fn-return-errors"></span>
+
+```rust
+impl Responder {
+    /// Perpetually waits for incoming requests on `self` and handles them with 
+    /// the given `handler`, sending back the computed reply.
+    pub fn serve_forever<A: Api, H>(self, mut handler: H) -> Result<()>
+    where
+        H: FnMut(A::Request) -> A::Reply,
+        A::Request: serde::DeserializeOwned,
+        A::Reply: serde::Serialize,
+    {
+        loop {
+            let request = self.next_request()?;
+            let request: A::Request = serde_json::from_slice(&request.data())
+                .map_err(|e| format!("Deserialize error: {e}"))?;
+            let reply = handler(request);
+            let data = serde_json::to_vec_pretty(&reply)
+                .map_err(|e| format!("Serialize error: {e}"))?;
+            let response = Message::from(data);
+            self.send_response(response)?;
+        }
+    }
+}
+```
+
+This code compiles, which you can verify by `cargo check`ing the code in the repo with the `start` feature, and this post could simply end here.
+However.
 
 ## The Problem: Zero-Copy Deserialization
+
+As it is written above, on the service side our `Responder` API forces the request data to be copied into the logical `A::Request` type.
+When we say `let request: A::Request = serde_json::from_slice(x)`, `serde_json` will recursively construct whatever is inside `A::Request` and the request type itself from the JSON object represented by the bytes in `x` by copying those bytes into a new, **owned** Rust type.
+This can be, for example, a `u32` or a `String`, but not a `&u32` or a `&str`, since those are references, not owned data.
+We can see the requirement that we can deserialize into an owned `Request` in the `where` bounds of `serve_forever`, where we ask for `A::Request: serde::DeserializeOwned`.
+
+### Aside: `serde` Lifetimes
+
+Most of the time, we all probably primarily use `serde` by deriving `Serialize` and / or `Deserialize` for our types so they work with whatever other library we want to use that implements or uses a data format (such as `serde_json` for JSON or a webserver crate that uses `serde_json` internally to help you build a JSON Web API).
+If that is the case for you too, you might not have come across `DeserializeOwned` before.
+But the derive macro for the `Deserialize` trait actually hides the fact that the trait has a lifetime: the actual definition of `Deserialize` is `trait Deserialize<'de>: Sized`.[^serialize]<span id="fn-serialize"></span>
+
+The `serde` documentation contains [its own section](https://serde.rs/lifetimes.html) about what this lifetime means and what it is for.
+For our purposes, the most important feature that the `'de` lifetime enables is _zero-copy deserialization_.
+"Zero-copy" refers to the fact that, as opposed to our current `serve_forever` implementation, a request can be deserialized into a type that holds a reference into the request instead of copying everything over into the struct.
+
+Consider a service which provides an API to convert some text to uppercase.
+With our current code, the request type looks like this:
+
+```rust
+#[derive(serde::Deserialize)]
+struct UppercaseRequest {
+    input: String
+}
+```
+
+Where `input` is an owned `String`.
+`serde`, however, also supports deriving `Deserialize` for a struct like this:
+
+```rust
+#[derive(serde::Deserialize)]
+struct UppercaseRequest<'input> {
+    input: &'input str,
+}
+```
+
+Where `input` is a reference to the text stored in the request JSON: 
+
+```json
+{ 
+    "input": "Foo" 
+    //        ^^^
+    //         |
+    //         -- input from UppercaseRequest
+}
+```
+
+The `serde` derive will make `UppercaseRequest<'input>` (with the lifetime) implement `Deserialize<'input>`, which means it's possible to deserialize some data that lives at least as long as some lifetime `'a` into an `UppercaseRequest<'a>` of the same lifetime (provided that the data is a string, of course).
+For structs without a lifetime (like the first `UppercaseRequest` where `input` is a `String`), `Deserialize<'de>` will be implemented for _any_ lifetime `'de`, because all data in the struct is owned and you can use the Rust type independently of the input buffer of the request once deserialized.
+
+Coincidentally, this is exactly what our current `DeserializeOwned` bound requires of the request type: it is equivalent to the bound `A::Request: for<'de> Deserialize<'de>`, which is the Rust syntax for "no matter the lifetime `'de` of the input, this type implements `Deserialize` with that lifetime (which means it can be deserialized from that input)".
+But copying every single request is a lot of work, so could we support zero-copy deserialization in our API as well?
+
+### Let's Try to be Zero-Copy!
+
+We'll need to change the bound on `serve_forever` away from `DeserializeOwned` to `Deserialize<'de>` with a lifetime.
+But... what lifetime? Where does it come from?
+The request is deserialized _inside_ `serve_forever` so we can pass it to the handler, so the lifetime of the input buffer and the lifetime of the Rust request object are both some subset of the current function.
+That's not something we can really explicitly refer to,[^named-block-lifetimes]<span id="fn-named-block-lifetimes"></span> so maybe this means `serve_forever` just has to be generic over `'de` and the compiler will figure out what lifetime that represents?
+
+```rust
+/// Perpetually waits for incoming requests on `self` and handles them with the
+/// given `handler`, sending back the computed reply.
+pub fn serve_forever<'de, A: Api, H>(self, mut handler: H) -> Result<()>
+where
+    H: FnMut(A::Request) -> A::Reply,
+    A::Request: Deserialize<'de>,
+    A::Reply: Serialize,
+{
+    loop {
+        let request = self.next_request()?;
+        let request: A::Request = serde_json::from_slice(&request.data())
+            .map_err(|e| format!("Deserialize error: {e}"))?;
+        let reply = handler(request);
+        let data = serde_json::to_vec_pretty(&reply)
+            .map_err(|e| format!("Serialize error: {e}"))?;
+        let response = Message::from(data);
+        self.send_response(response)?;
+    }
+}
+```
+
+If we try to compile this (which you can try with `--features zero_copy1` in the repo), we get an error:
+
+```
+error[E0597]: `data` does not live long enough
+  --> src\zero_copy1.rs:60:40
+   |
+51 |     pub fn serve_forever<'de, A: Api, H>(self, mut handler: H) -> Result<()>
+   |                          --- lifetime `'de` defined here
+...
+58 |             let data = self.next_request()?.data();
+   |                 ---- binding `data` declared here
+59 |             let data = serde_json::from_slice(&data)
+   |                 ------------------------------^^^^^-
+   |                 |                             |
+   |                 |                             borrowed value does not 
+   |                 |                             live long enough
+   |                 argument requires that `data` is borrowed for `'de`
+...
+66 |         }
+   |         - `data` dropped here while still borrowed
+```
+
+Seems like the compiler is not happy about us leaving the `'de` lifetime up in the air.
+As there is nowhere else that takes a lifetime, we might try to use the `for<'de>` syntax from above to summon one out of thin air inside the `where` bound for `Deserialize<'de>` instead of the function generic parameters, but as we've learned this just means `DeserializedOwned`, which we had before.
+So while it compiles, the `zero_copy2` example in the repo shows that we can't actually invoke `serve_forever` with that bound for our borrowing `UppercaseRequest`:
+
+```
+error: implementation of `Deserialize` is not general enough
+  --> examples\zero_copy2.rs:28:14
+   |
+28 |             .serve_forever::<UppercaseRequest, _>(|request| 
+   |              ^^^^^^^^^^^^^ implementation of `Deserialize` is not 
+   |                            general enough
+   |
+   = note: `UppercaseRequest<'_>` must implement `Deserialize<'0>`, 
+           for any lifetime `'0`...
+   = note: ...but `UppercaseRequest<'_>` actually implements `Deserialize<'1>`, 
+           for some specific lifetime `'1`
+```
+
+Don't be confused by the lifetime names `'0` and `'1` that the compiler uses.
+The important information is that we "must implement `Deserialize` for any lifetime" (because we said so by requesting `for<'de> Deserialize<'de>`, just that the compiler names `'de` as `'0` instead), but `UppercaseRequest` contains a lifetime (the `input` reference) and so we can only `Deserialize` for this "specific lifetime" (which the compiler calls `'1`).
+
+### Going Higher-Order
+
+This doesn't work.
+We won't get any further without a way to tie the `Deserialize` lifetime `'de` to the (potential) lifetime in our request type, so we need a way to pass `'de` through to `UppercaseRequest`.
+One way to do this would be to make the `Api` trait generic over a lifetime as well, like `Deserialize` is:
+
+```rust,hl_lines=10
+// Now with lifetime!
+//            vvv
+pub trait Api<'de> {
+    /// The service whose API is extended with this implementation.
+    ///
+    /// `Request`s of the implementing type will be sent to this service.
+    const SERVICE: &'static str;
+
+    /// The request body.
+    type Request: Serialize + Deserialize<'de>;
+    //                                    ^^^
+    //       can now mention the same lifetime
+
+    /// The data returned to answer a `Request`.
+    type Reply: Serialize + DeserializeOwned;
+}
+```
+
+Note that we've also moved the `Serialize` and `Deserialize` bounds from the respective functions into the trait definition so both `'de`s are in the same place.
+But, since we have them now, let's use generic associated types (GATs) instead!
+With GATs, we can move the lifetime for the requests onto the `Request` associated type itself: 
+
+```rust,hl_lines=8
+pub trait Api {
+    /// The service whose API is extended with this implementation.
+    ///
+    /// `Request`s of the implementing type will be sent to this service.
+    const SERVICE: &'static str;
+
+    /// The request body.
+    type Request<'de>: Serialize + Deserialize<'de>;
+
+    /// The data returned to answer a `Request`.
+    type Reply: Serialize + DeserializeOwned;
+}
+```
+
+With either version, there is now a lifetime associated with `Api` that is passed on to the `Deserialize` bound on the `Request` type.
+Therefore, we now have access to `'de` when implementing `Api` for our `UppercaseRequest` and can pass it on to our type:
+
+```rust,hl_lines=2
+impl Api for UppercaseRequest<'_> {
+    type Request<'de> = UppercaseRequest<'de>;
+    type Reply = String;
+
+    const SERVICE: &'static str = TEXT_SERVICE;
+}
+```
+
+Which, combined with the trait definition, means that we have established a "lifetime chain" `UppercaseRequest<'_>::Request<'de> = UppercaseRequest<'de>: Deserialize<'de>`.
+
+When updating `serve_forever`, we have to concern ourselves with the type of the `handler` parameter:
+So far, this has been `H: FnMut(A::Request) -> A::Reply` - a function from requests to replies.
+This is still what we want, but now `A::Request` is actually `A::Request<'de>`, so we've got the inverse problem as before: now we _can_ name a lifetime, but that also means we _have_ to pass one and need to figure out which is correct.
+
+The simplest possible solution would be to once again defer to the compiler and write `H: FnMut(A::Request<'_>) -> A::Reply`.
+Surprisingly, this time it actually works!
+To the compiler, `'_` means "any lifetime" (as opposed to "some specific lifetime `'1`"), so the above is equivalent to `H: for<'de> FnMut(A::Request<'de>) -> A::Reply`: no matter `'de`, if I have a request with that lifetime then I can pass it to the handler and it will compute a `Reply`.
+This time, this is what we want and everything works and you can send as many `UppercaseRequests` as your heart desires by running the `zero_copy3` example and entering evil lowercase text on the terminal that must be converted to uppercase glory.
+
+### Giving Our Bound A Name
+
+For our single `serve_forever` function, it's fine to write out the rather convoluted bound for `H` and be done with it.
+If there were multiple functions that accepted such a type, it's probably better to define a name for it in one place so you can refer to just the name wherever you might need it.
+
+We'll define two new traits, `HandlerOn<'req>` and `Handler`, that represent handlers that can handle a request with a specific lifetime `'req` and requests for any lifetime, respectively:
+
+```rust
+/// A function that can handle [`A::Request<'de>`](Api::Request) 
+/// for `'de == 'req`.
+pub trait HandlerOn<'req, A: Api>: FnMut(A::Request<'req>) -> A::Reply {}
+impl<'req, A: Api, F> HandlerOn<'req, A> for F 
+    where F: FnMut(A::Request<'req>) -> A::Reply
+{}
+
+/// A function that can handle [`A::Request<'de>`](Api::Request) 
+/// for any `'de`.
+pub trait Handler<A: Api>: for<'req> HandlerOn<'req, A> {}
+impl<A: Api, F: for<'req> HandlerOn<'req, A>> Handler<A> for F {}
+```
+
+The definition of `serve_forever` now becomes just
+
+```rust
+pub fn serve_forever<A: Api, H: Handler<A>>(self, mut handler: H) -> Result<()>;
+```
+
+To verify that this indeed still runs as before, run example `zero_copy4` in the repository.
+You can read more on this entire construction in [this URLO thread](https://users.rust-lang.org/t/generic-parameter-bound-by-deserialize-de-is-this-pattern-possible-in-rust/82163/3) if you want to.
 
 ## The Other Problem: Many Different Requests
 
@@ -245,3 +497,9 @@ closure type annotations
 [^auto-features]: It's unfortunate that the feature has to be specified even though we can (and I have) set the `required-features` for an example in `Cargo.toml`. You'll currently get an error from cargo that tells you to add the correct `--feature` flag if you try running the example without it, so clearly `cargo` knows what's up. But this is one of these issues that are a lot more difficult to actually change than it seems on the surface - if you're curious, you can check out the `cargo` issue for this at [`cargo#4663`](https://github.com/rust-lang/cargo/issues/4663). <a href="#fn-auto-features" class="footnote-backref" role="doc-backlink">↩︎</a>
 
 [^bounding-the-request-type]: In the example code, I've used a slightly different signature for `request`: there, it is written as `fn request<A: Api<Request = A>>` and takes the request as an `A` instead of an `A::Request`. Constraining the implementation of `Api` to be implemented on the request type itself is less flexible, but allows calling `request` without specifying `A` with a turbofish (as `requester.request::<FooRequest>(req)`) because the compiler is able to infer the generic parameter from the argument type. But it's also a bit ugly and requires bounding `Api` itself by `Serialize`, so I'm leaving it as a footnote. <a href="#fn-bounding-the-request-type" class="footnote-backref" role="doc-backlink">↩︎</a>
+
+[^return-errors]: I'm presupposing that the logical handler is "infallible", which just means that if there _is_ an error with or while processing the request, this will be communicated to the requester via the `Reply` as opposed to having the handler fail (by allowing it to return a `Result<Reply, E>` with some error). Since the protocol format and also (de-)serialization are handled by our API, any remaining error can only be a logical one. When implementing `Api`, this can be represented by making `Reply` be a `Result<T>`, using an `enum FooReply` as the `Reply` type that contains an `InvalidRequest` variant, or similar. <a href="#fn-return-errors" class="footnote-backref" role="doc-backlink">↩︎</a>
+
+[^serialize]: This is not the case for `Serialize`. When you serialize a type to some format, you probably intend to send the resulting bytes somewhere else, e.g. over the network to make a web request. It would be of little use to be able to borrow from the Rust type from within the serialized bytes, and besides you cannot serialize to a single byte buffer or string of which only a subsection is a reference to the original type and the rest is owned bytes, so `serde` doesn't support it. <a href="#fn-serialize" class="footnote-backref" role="doc-backlink">↩︎</a>
+
+[^named-block-lifetimes]: No, [`label-break-value`](https://github.com/rust-lang/rfcs/pull/2046) doesn't count here. <a href="#fn-named-block-lifetimes" class="footnote-backref" role="doc-backlink">↩︎</a>
