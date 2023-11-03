@@ -407,7 +407,199 @@ You can read more on this entire construction in [this URLO thread](https://user
 
 ## The Other Problem: Many Different Requests
 
-imagine
+We've succeeded in writing an API for both clients and services that allows them to implement an API purely by working with a logical Rust request and response data structure.
+So that's it! Time to head home.
+Unless, of course, you want your services to serve more than a single kind of requests.
+
+Currently, you can call `serve_forever` on a `Responder` and, well, serve one implementation of `Api`... forever. 
+But what if we want our text service to be able to both convert text to uppercase as well as to lowercase? 
+And maybe later we'll add an API for trimming whitespace, too!
+`serve_forever` can only handle (with the given `handler`) one particular `A: Api`, though, so what do?
+
+For this example, all requests go from text to text, so we could work around the issue by defining an
+
+```rust
+enum TextRequest<'a> {
+    UppercaseRequest(&'a str),
+    LowercaseRequest(&'a str),
+    TrimRequest(&'a str),
+}
+```
+
+implementing `Api` for it and providing a handler that takes a `TextRequest` and returns a `String`.
+But what if we have one API for strings and one for numbers? 
+Or, perhaps more realistically, if all our APIs take some data structure specific to this API as their input that we would like to represent as Rust `struct`s, and also return similarly different data?
+
+Instead of falling back on two big `enum Request` and `enum Response`s where we can't even guarantee that the correct `Response` variant is sent for a given `Request`, let's try to come up with a library API that supports multiple types of requests.
+Perhaps we can look at some other frameworks for inspiration?
+Surely, we can't be the first developers to ever want to route different requests to different handlers... wait, isn't that what like every single web framework does?
+
+Let's look at `axum` as an example. 
+On a high level, it provides a `Router` type that you can use to build up different web endpoints for different URLs and HTTP methods like so (taking from their [documentation](https://docs.rs/axum/latest/axum/)):
+
+```rust 
+let app = Router::new()
+    .route("/", get(root))
+    .route("/foo", get(get_foo).post(post_foo))
+    .route("/foo/bar", get(foo_bar));
+```
+
+where `get_foo` etc. are `async fn`s.
+The `Router::route` method takes a `MethodRouter` as its second argument, which is basically a static `HashMap` that can hold one handler per HTTP method (`GET`, `POST`, etc.).
+This makes sense for a web framework, but we'll only consider one handler per route for this post.
+
+To start with, in addition to the `SERVICE` name we'll also give each `Api` its own unique name to differentiate the APIs implemented by a service:
+
+```rust
+pub trait Api {
+    /// The service whose API is extended with this implementation.
+    ///
+    /// `Request`s of the implementing type will be sent to this service.
+    const SERVICE: &'static str;
+
+    /// The unique name of the API that identifies the kind of `Request` 
+    /// to the `SERVICE`.
+    const NAME: &'static str;
+
+    /// The request body.
+    type Request<'de>: Serialize + Deserialize<'de>;
+
+    /// The data returned to answer a `Request`.
+    type Reply: Serialize + DeserializeOwned;
+}
+```
+
+We'll send the name as part of the underlying protocol `Message`.[^api-name]<span id="fn-api-name"></span>
+Next, we want to have our own router type that maps the API names of a service to their correct handlers.
+
+```rust
+pub struct ApiRouter {
+    handlers: HashMap<&'static str, dyn Handler<A>>,
+}
+```
+
+We can then provide APIs to get an `ApiRouter`, add new handlers and run our `serve_forever` loop, except now we extract the API name from the request and look up the corresponding handler to invoke.
+
+```rust
+impl ApiRouter {
+    /// Create a new `Router`.
+    ///
+    /// Unless you add additional routes via [`register_handler`], this
+    /// will respond with `InvalidRequest` to all requests.
+    pub fn new() -> Self {
+        Self { handlers: HashMap::new() }
+    }
+
+    /// Add a new handler for API requests of type `A`.
+    ///
+    /// This will make the router route all requests of type `A` to the given 
+    /// `handler` if the request data can be successfully deserialized into 
+    /// [`A::Request`]. The `handler` may be a function name or a closure.
+    pub fn register_handler<A: Api, H: Handler<A>>(mut self, handler: H) -> Self
+    where
+        H: 'static,
+    {
+        self.handlers.insert(A::NAME, handler);
+        self
+    }
+
+    /// Perpetually waits for incoming requests on `socket` and handles them 
+    /// with the handler registered for their route, sending back the computed
+    /// reply.
+    pub fn serve_on(mut self, socket: Responder) -> Result<()> {
+        loop {
+            let Message { api_name, data } = socket.next_request()?;
+
+            let handler = self
+                .handlers
+                .get_mut(api_name.as_str())
+                .ok_or_else(|| format!("No handler for '{api_name}'",))?;
+            let reply = (handler.0)(&data)?;
+            let response = Message {
+                api_name,
+                data: reply,
+            };
+            socket.send_response(response)?;
+        }
+    }
+}
+```
+
+Except. 
+This doesn't compile.
+We're storing `dyn Handler`s in the router so we don't have to differentiate between the different types of different handler functions, but `Handler` is still generic over `A`, so the compiler (rightfully) complains:
+
+```
+error[E0412]: cannot find type `A` in this scope
+  --> src\multiple_handlers1.rs:27:49
+   |
+27 |     handlers: HashMap<&'static str, dyn Handler<A>>,
+   |                                                 ^ not found in this scope
+   |
+help: you might be missing a type parameter
+   |
+26 | pub struct ApiRouter<A> {
+   |                     +++
+```
+
+It tries to help us by suggesting we make the router generic as well, but we don't want that:
+then a service could only have an `ApiRouter<SomeRequest>` for a fixed request type `SomeRequest` - exactly what we're trying to fix right now!
+
+How can we get rid of `Handler`'s generic parameter... maybe we can move the `A` _inside_ the trait, as an associated type?[^explicit-trait]<span id="fn-explicit-trait"></span>
+That would look like this:
+
+```rust
+/// A function that can handle [`A::Request<'de>`](Api::Request) 
+/// for `'de == 'req`.
+pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) -> Self::Api::Reply
+{
+    type Api: Api;
+}
+impl<'req, A: Api, F> HandlerOn<'req> for F 
+    where F: FnMut(A::Request<'req>) -> A::Reply 
+{
+    type Api = A;
+}
+
+/// A function that can handle [`A::Request<'de>`](Api::Request) 
+/// for any `'de`.
+pub trait Handler: for<'req> HandlerOn<'req> {}
+impl<F: for<'req> HandlerOn<'req>> Handler for F {}
+```
+
+We're saying we want the handler to be a function that takes request of the `Api` associated type, which is the `A: Api` in the first `impl`.
+The compiler isn't very happy:
+
+```
+error[E0223]: ambiguous associated type
+  --> src\multiple_handlers2.rs:77:34
+   |
+77 | pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) 
+   |     -> Self::Api::Reply {
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if there were a trait named `Example` with associated type `Request` 
+      implemented for `<Self as HandlerOn<'req>>::Api`, you could use the 
+      fully-qualified path
+   |
+77 | pub trait HandlerOn<'req>: FnMut(<<Self as HandlerOn<'req>>::Api as Example>::Request) -> Self::Api::Reply {
+   |                 
+```
+
+Because both `Self` and `Self::Api` may implement multiple traits, and any (or all) of these traits could have associated types named `Api` or `Request`, the compiler wants us to be specific and say that we mean the `Api` associated type from `HandlerOn` and the `Request` associated type from `Api` (which it doesn't know, so it gives us an arbitrary `Example` trait).
+Fine, let's write what it says even though it is positively hideous:
+
+```rust
+pub trait HandlerOn<'req>:
+    FnMut(<Self::Api as Api>::Request<'req>) -> <Self::Api as Api>::Reply
+{
+    type Api: Api;
+}
+```
+
+That doesn't help, for multiple reasons.
+First of all, it is _also_ ambiguous, just in a different way.
+Imagine we have the following two `Api` implementations:
 
 ```rust
 struct Api1;
@@ -427,40 +619,53 @@ impl Api for Api2 {
 fn handler(request: String) -> String { /* ... */ }
 ```
 
-```
-error[E0223]: ambiguous associated type
-  --> src\multiple_handlers3.rs:77:34
-   |
-77 | pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) -> Self::Api::Reply {
-   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^
-   |
-help: if there were a trait named `Example` with associated type `Request` implemented for `<Self as HandlerOn<'req>>::Api`, you could use the fully-qualified path
-   |
-77 | pub trait HandlerOn<'req>: FnMut(<<Self as HandlerOn<'req>>::Api as Example>::Request) -> Self::Api::Reply {
-   |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Here, `handler` fits the description of `FnMut(A::Request) -> A::Reply` for both `Api1` and `Api2`, as their `Request` and `Reply` types are the same.
+But if we change `Handler` and `HandlerOn` to use an associated type, we are forced to choose one single value for the implementation of `HandlerOn` for the `fn handler`.
+We don't, which the compiler reports as
 
-error[E0223]: ambiguous associated type
-  --> src\multiple_handlers3.rs:77:63
+```
+error[E0207]: the type parameter `A` is not constrained by the impl trait, 
+              self type, or predicates
+  --> src\multiple_handlers2.rs:82:12
    |
-77 | pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) -> Self::Api::Reply {
-   |                                                               ^^^^^^^^^^^^^^^^
-   |
-help: if there were a trait named `Example` with associated type `Reply` implemented for `<Self as HandlerOn<'req>>::Api`, you could use the fully-qualified path
-   |
-77 | pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) -> <<Self as HandlerOn<'req>>::Api as Example>::Reply {
-   |          
+82 | impl<'req, A: Api, F> HandlerOn<'req> for F 
+   |            ^ unconstrained type parameter
 ```
 
-not object safe
+We _do_ mention `A` in the bounds of the implementation (`where F: FnMut(A::Request<'req>) -> A::Reply`), but - as we've shown above - that's not enough to be able to uniquely infer what type `A` actually represents. 
+If you `rustc --explain E0207` the error, the compiler will tell you the exact rules for what counts as "constraining" a generic parameter:
+
+<blockquote>
+Any type or const parameter of an `impl` must meet at least one of the
+following criteria:
+
+ - it appears in the _implementing type_ of the impl, e.g. `impl<T> Foo<T>`
+ - for a trait impl, it appears in the _implemented trait_, e.g.
+   `impl<T> SomeTrait<T> for Foo`
+ - it is bound as an associated type, e.g. `impl<T, U> SomeTrait for T
+   where T: AnotherTrait<AssocType=U>`
+
+Any unconstrained lifetime parameter of an `impl` is not supported if the
+lifetime parameter is used by an associated type.
+</blockquote>
+
+So while we _mention_ `A` in a `where` bound, we don't constrain anything to `A` itself, only to its `Request` and `Reply` types.
+
+There's another problem as well: because we need these types to write the `where` bound, we need to go through the implementing type `Self` to get them.
+We want a function that takes the `Request` type for the API it is a handler for (otherwise it wouldn't make sense), which is `Self::Api::Request` (same for `Reply`).
+However, this makes the `Handler` and `HandlerOn` traits no longer object safe, which means we cannot have a `dyn Handler`, which we wanted to store in our router:
 
 ```
 error[E0038]: the trait `Handler` cannot be made into an object
   --> src\multiple_handlers4.rs:27:41
    |
 27 |     handlers: HashMap<&'static str, Box<dyn Handler>>,
-   |                                         ^^^^^^^^^^^ `Handler` cannot be made into an object
+   |                                         ^^^^^^^^^^^ 
+   |              `Handler` cannot be made into an object
    |
-note: for a trait to be "object safe" it needs to allow building a vtable to allow the call to be resolvable dynamically; for more information visit <https://doc.rust-lang.org/reference/items/traits.html#object-safety>
+note: for a trait to be "object safe" it needs to allow building a vtable to 
+      allow the call to be resolvable dynamically; for more information visit 
+      <https://doc.rust-lang.org/reference/items/traits.html#object-safety>
   --> src\multiple_handlers4.rs:78:5
    |
 78 | /     FnMut(
@@ -468,25 +673,34 @@ note: for a trait to be "object safe" it needs to allow building a vtable to all
 80 | | ) -> <<Self as HandlerOn<'req>>::Api as Api>::Reply
    | |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    | |______|____________________________________________|
-   |        |                                            ...because it uses `Self` as a type parameter
+   |        |...because it uses `Self` as a type parameter
+   |        |
    |        ...because it uses `Self` as a type parameter
 ...
 89 |   pub trait Handler: for<'req> HandlerOn<'req> {}
    |             ------- this trait cannot be made into an object...
 ```
 
-even if would not help because
+Even if we could somehow magic the trait to still support having a `dyn Handler`, it wouldn't help because...
 
 ```
-error[E0191]: the value of the associated type `Api` (from trait `HandlerOn`) must be specified
+error[E0191]: the value of the associated type `Api` (from trait `HandlerOn`) 
+              must be specified
   --> src\multiple_handlers3.rs:27:45
    |
 27 |     handlers: HashMap<&'static str, Box<dyn Handler>>,
-   |                                             ^^^^^^^ help: specify the associated type: `Handler<Api = Type>`
+   |                                             ^^^^^^^ 
+   | help: specify the associated type: `Handler<Api = Type>`
 ...
 78 |     type Api: Api;
    |     ------------- `Api` defined here
 ```
+
+That's right! 
+Associated types don't even solve our problem in the first place, because even when there is only one `Api` per `Handler` Rust requires us to name both.
+It won't be enough to move the `Api` generic to somewhere else, we'll need to _erase_ it completely.
+
+### Calling Upon The Dark Arts
 
 ## Bonus: I've Been Hiding Something
 closure type annotations
@@ -503,3 +717,7 @@ closure type annotations
 [^serialize]: This is not the case for `Serialize`. When you serialize a type to some format, you probably intend to send the resulting bytes somewhere else, e.g. over the network to make a web request. It would be of little use to be able to borrow from the Rust type from within the serialized bytes, and besides you cannot serialize to a single byte buffer or string of which only a subsection is a reference to the original type and the rest is owned bytes, so `serde` doesn't support it. <a href="#fn-serialize" class="footnote-backref" role="doc-backlink">↩︎</a>
 
 [^named-block-lifetimes]: No, [`label-break-value`](https://github.com/rust-lang/rfcs/pull/2046) doesn't count here. <a href="#fn-named-block-lifetimes" class="footnote-backref" role="doc-backlink">↩︎</a>
+
+[^api-name]: If the underlying protocol supports it, the API (as well as the service) could also be identified by a numeric ID or some other, more compact identifier. I'll stick to string names here, though, since it makes the examples more readable. <a href="#fn-api-name" class="footnote-backref" role="doc-backlink">↩︎</a>
+
+[^explicit-trait]: Note that there is no way to do this with the original bound of `H: for<'de> FnMut(A::Request<'de>) -> A::Reply`. There is simply no place in the syntax where we could even _state_ an associated type. This might already give you an idea of how well this is going to turn out... <a href="#fn-explicit-trait" class="footnote-backref" role="doc-backlink">↩︎</a>
