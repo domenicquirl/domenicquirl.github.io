@@ -431,7 +431,13 @@ We'll make `Token`'s `Display` forward to its `kind`, but let its `Debug` also s
 ```rust
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} - <{}, {}>", self.kind, self.span.start, self.span.end)
+        write!(
+            f, 
+            "{:?} - <{}, {}>", 
+            self.kind, 
+            self.span.start, 
+            self.span.end
+        )
     }
 }
 
@@ -470,11 +476,12 @@ impl Lexer {
     /// Returns `None` if the lexer cannot find a token at the start of `input`.
     fn valid_token(&self, input: &str) -> Option<Token> {
         let next = input.chars().next().unwrap();
-        let (len, kind) = if let Some(kind) = unambiguous_single_char(next) {
-            (1, kind)
-        } else {
-            return None;
-        };
+        let (len, kind) = 
+            if let Some(kind) = unambiguous_single_char(next) {
+                (1, kind)
+            } else {
+                return None;
+            };
 
         Some(Token {
             kind,
@@ -522,7 +529,8 @@ We can also start thinking about what to do when the user inputs something we do
 If we can't make a token at the start of the input, we'll look ahead until we can and emit an `Error` token for the characters we've had to skip over:
 ```rust
 pub fn next_token(&self, input: &str) -> Token {
-    self.valid_token(input).unwrap_or_else(|| self.invalid_token(input))
+    self.valid_token(input)
+        .unwrap_or_else(|| self.invalid_token(input))
 }
 
 /// Always "succeeds", because it creates an error `Token`.
@@ -642,7 +650,9 @@ impl<'input> Iterator for Lexer<'input> {
                 },
             })
         } else {
-            Some(self.next_token(&self.input[self.position as usize..]))
+            Some(self.next_token(
+                &self.input[self.position as usize..]
+            ))
         }
     }
 }
@@ -677,11 +687,12 @@ Let's actually fix the spans now:
 /// Returns `None` if the lexer cannot find a token at the start of `input`.
     fn valid_token(&mut self, input: &str) -> Option<Token> {
         let next = input.chars().next().unwrap();
-        let (len, kind) = if let Some(kind) = unambiguous_single_char(next) {
-            (1, kind)
-        } else {
-            return None;
-        };
+        let (len, kind) = 
+            if let Some(kind) = unambiguous_single_char(next) {
+                (1, kind)
+            } else {
+                return None;
+            };
 
         // NEW!
         let start = self.position;
@@ -700,7 +711,9 @@ Let's actually fix the spans now:
         let start = self.position; // <- NEW!
         let len = input
             .char_indices()
-            .find(|(pos, _)| self.valid_token(&input[*pos..]).is_some())
+            .find(|(pos, _)| {
+                self.valid_token(&input[*pos..]).is_some()
+            })
             .map(|(pos, _)| pos)
             .unwrap_or_else(|| input.len());
         debug_assert!(len <= input.len());
@@ -823,12 +836,15 @@ fn match_single_char(input: &str, c: char) -> Option<u32> {
         .and_then(|ch| if ch == c { Some(1) } else { None })
 }
 
-fn match_two_chars(input: &str, first: char, second: char) -> Option<u32> {
+fn match_two_chars(
+    input: &str, 
+    first: char, 
+    second: char
+) -> Option<u32> {
     if input.len() >= 2 {
         match_single_char(input, first)
             .and_then(|_| {
-                match_single_char(&input[1..], second)
-                    .map(|_| 2)
+                match_single_char(&input[1..], second).map(|_| 2)
             })
     } else {
         None
@@ -949,7 +965,9 @@ impl<'input> Lexer<'input> {
                 // rules match, but we want earlier rules to "win" 
                 // against later ones
                 .rev()
-                .filter_map(|rule| Some(((rule.matches)(input)?, rule.kind)))
+                .filter_map(|rule| {
+                    Some(((rule.matches)(input)?, rule.kind))
+                })
                 .max_by_key(|&(len, _)| len)?
         };
 
@@ -988,7 +1006,13 @@ fn keywords() {
     let tokens: Vec<_> = lexer.tokenize().into_iter()
         .filter(|t| t.kind != T![ws]).collect();
     assert_tokens!(tokens, [
-        T![if], T![let], T![=], T![struct], T![else], T![fn], T![EOF],
+        T![if], 
+        T![let], 
+        T![=], 
+        T![struct], 
+        T![else], 
+        T![fn], 
+        T![EOF],
     ]);
 }
 ```
@@ -1108,15 +1132,17 @@ fn function() {
             T![let], T![ident], T![=], T![ident], 
                 T![.], T![ident], T!['('], T![')'], T![;],
             // if
-            T![if], T![let], T![ident], T!['('], T![ident], T![')'], T![=], 
-                T![ident], T![.], T![ident], T!['('], T![')'], 
+            T![if], T![let], T![ident], T!['('], T![ident], T![')'], 
+                T![=], T![ident], T![.], T![ident], T!['('],T![')'], 
             T!['{'], 
                 // `x` re-assignment
-                T![ident], T![=], T![ident], T![+], T![ident], T![;],
+                T![ident], T![=], 
+                    T![ident], T![+], T![ident], T![;],
             // else if
             T!['}'], T![else], T![if], T![!], T![ident], T!['{'], 
                 // `x` re-assignment
-                T![ident], T![=], T![ident], T![+], T![string], T![;], 
+                T![ident], T![=], 
+                    T![ident], T![+], T![string], T![;], 
             T!['}'], // end if
         T!['}'], // end fn
         T![EOF],
@@ -1133,12 +1159,17 @@ fn struct_def() {
     let input = unindent(input);
     let input = input.as_str();
     let mut lexer = Lexer::new(input);
-    let tokens: Vec<_> = lexer.tokenize().into_iter().filter(|t| t.kind != T![ws]).collect();
+    let tokens: Vec<_> = lexer
+        .tokenize()
+        .into_iter()
+        .filter(|t| t.kind != T![ws])
+        .collect();
     assert_tokens!(tokens, [
         // struct definition/type
         T![struct], T![ident], T![<], T![ident], T![>], T!['{'], 
             // member `bar` of type `Bar<T>`
-            T![ident], T![:], T![ident], T![<], T![ident], T![>],T![,], 
+            T![ident], T![:], 
+                T![ident], T![<], T![ident], T![>], T![,], 
         T!['}'], // end struct
         T![EOF],
     ]);
@@ -1271,7 +1302,9 @@ where
 }
 
 impl<'input> Parser<'input, TokenIter<'input>> {
-    pub fn new(input: &'input str) -> Parser<'input, TokenIter<'input>> {
+    pub fn new(
+        input: &'input str
+    ) -> Parser<'input, TokenIter<'input>> {
         Parser {
             input,
             tokens: TokenIter::new(input).peekable(),
@@ -1351,8 +1384,9 @@ We start with the most basic expression of them all: literals
 ```rust
 lit @ T![int] | lit @ T![float] | lit @ T![string] => {
     let literal_text = {
-        // the calls on `self` need to be split, because `next` takes `&mut self`
-        // if `peek` is not `T![EOF]`, then there must be a next token
+        // the calls on `self` need to be split, because `next` takes 
+        // `&mut self` if `peek` is not `T![EOF]`, then there must be 
+        // a next token
         let literal_token = self.next().unwrap();
         self.text(literal_token)
     };
@@ -1455,7 +1489,8 @@ pub fn parse_expression(&mut self) -> ast::Expr {
     match self.peek() {
         lit @ T![int] | lit @ T![float] | lit @ T![string] => {
             let literal_text = {
-                // if `peek` is not `T![EOF]`, then there must be a next token
+                // if `peek` is not `T![EOF]`, then there must be 
+                // a next token
                 let literal_token = self.next().unwrap();
                 self.text(literal_token)
             };
@@ -1477,7 +1512,8 @@ pub fn parse_expression(&mut self) -> ast::Expr {
                         ),
                 ),
                 T![string] => ast::Lit::Str(
-                    literal_text[1..(literal_text.len() - 1)].to_string()
+                    literal_text[1..(literal_text.len() - 1)]
+                        .to_string()
                 ),
                 _ => unreachable!(),
             };
@@ -1567,7 +1603,9 @@ fn parse_expression() {
         expr,
         ast::Expr::PrefixOp {
             op:   T![!],
-            expr: Box::new(ast::Expr::Ident("is_visible".to_string())),
+            expr: Box::new(
+                ast::Expr::Ident("is_visible".to_string())
+            ),
         }
     );
     let expr = parse("(-13)");
@@ -1836,8 +1874,10 @@ pub fn parse_expression(&mut self, binding_power: u8) -> ast::Expr {
         }
         op @ T![+] | op @ T![-] | op @ T![!] => {
             self.consume(op);
-            let ((), right_binding_power) = op.prefix_binding_power(); 
-            let expr = self.parse_expression(right_binding_power); // <- NEW!
+            let ((), right_binding_power) = 
+                op.prefix_binding_power(); 
+            // NEW!
+            let expr = self.parse_expression(right_binding_power); 
             ast::Expr::PrefixOp {
                 op,
                 expr: Box::new(expr),
@@ -1854,8 +1894,8 @@ pub fn parse_expression(&mut self, binding_power: u8) -> ast::Expr {
             op.infix_binding_power() { // <- NEW!
 
             if left_binding_power < binding_power {
-                // previous operator has higher binding power than new one
-                // --> end of expression
+                // previous operator has higher binding power than 
+                // new one --> end of expression
                 break; 
             }
 
@@ -1932,10 +1972,12 @@ pub fn parse_expression(&mut self, binding_power: u8) -> ast::Expr {
         let op = // unchanged;
 
         // NEW!
-        if let Some((left_binding_power, ())) = op.postfix_binding_power() { 
+        if let Some((left_binding_power, ())) = 
+            op.postfix_binding_power() 
+        { 
             if left_binding_power < binding_power {
-                // previous operator has higher binding power than new one 
-                // --> end of expression
+                // previous operator has higher binding power than 
+                // new one --> end of expression
                 break;
             }
 
@@ -2157,7 +2199,9 @@ fn parse_statements() {
 
     let assignment_stmt = &stmts[0];
     match assignment_stmt {
-        ast::Stmt::Assignment { var_name, .. } => assert_eq!(var_name, "x"),
+        ast::Stmt::Assignment { var_name, .. } => {
+            assert_eq!(var_name, "x");
+        }
         _ => unreachable!(),
     }
 
@@ -2333,7 +2377,8 @@ pub fn item(&mut self) -> ast::Item {
                     "Expected identifier as struct member, but found `{}`",
                     member_ident.kind
                 );
-                let member_name = self.text(member_ident).to_string();
+                let member_name = 
+                    self.text(member_ident).to_string();
                 self.consume(T![:]);
                 let member_type = self.type_();
                 members.push((member_name, member_type));
@@ -2728,7 +2773,9 @@ fn bench_lexer(c: &mut Criterion, name: &str, input: &str) {
 
     // To measure throughput, we need to tell `criterion`
     // how big our input is.
-    group.throughput(Throughput::Bytes(input.as_bytes().len() as u64));
+    group.throughput(
+        Throughput::Bytes(input.as_bytes().len() as u64)
+    );
     group.bench_with_input( name, input, |b, input| {
         b.iter_batched(
             || Lexer::new(input),         // <- Our lexer is made HERE
@@ -2790,7 +2837,9 @@ fn bench_parser(c: &mut Criterion, name: &str, input: &str) {
     let mut group = c.benchmark_group("parser");
     group.measurement_time(Duration::from_secs(10));
 
-    group.throughput(Throughput::Bytes(input.as_bytes().len() as u64));
+    group.throughput(
+        Throughput::Bytes(input.as_bytes().len() as u64)
+    );
     group.bench_with_input(name, input, |b, input| {
         b.iter_with_setup(
             || Parser::new(input),
@@ -2802,7 +2851,8 @@ fn bench_parser(c: &mut Criterion, name: &str, input: &str) {
     group.finish();
 }
 
-criterion_group!(benches, lex_function, lex_struct, parse_file); // edited
+// Edited
+criterion_group!(benches, lex_function, lex_struct, parse_file); 
 ```
 And here the result:
 ```
@@ -2818,14 +2868,16 @@ If we bring in [`rayon`](https://crates.io/crates/rayon) and try to "manually" r
 lexer/function    time:   [518.46 us 520.06 us 522.20 us]
                   thrpt:  [443.21 KiB/s 445.04 KiB/s 446.41 KiB/s]
            change:
-                  time:   [+5183.5% +5251.9% +5312.1%] (p = 0.00 < 0.05)
+                  time:   [+5183.5% +5251.9% +5312.1%] 
+                          (p = 0.00 < 0.05)
                   thrpt:  [-98.152% -98.132% -98.107%]
                   Performance has regressed.
 
 lexer/struct      time:   [134.49 us 135.01 us 135.82 us]
                   thrpt:  [251.66 KiB/s 253.16 KiB/s 254.14 KiB/s]
            change:
-                  time:   [+5153.5% +5251.2% +5342.9%] (p = 0.00 < 0.05)
+                  time:   [+5153.5% +5251.2% +5342.9%] 
+                          (p = 0.00 < 0.05)
                   thrpt:  [-98.163% -98.131% -98.097%]
                   Performance has regressed.
 ```
@@ -3045,21 +3097,24 @@ Let's run the benchmark again, with the alias set as above:
 lexer/function          time:   [1.7565 us 1.7922 us 1.8295 us]
                         thrpt:  [123.54 MiB/s 126.11 MiB/s 128.67 MiB/s]
                  change:
-                        time:   [-82.441% -81.851% -81.304%] (p = 0.00 < 0.05)
+                        time:   [-82.441% -81.851% -81.304%] 
+                                (p = 0.00 < 0.05)
                         thrpt:  [+434.87% +451.00% +469.50%]
                         Performance has improved.
 
 lexer/struct            time:   [601.18 ns 609.49 ns 618.23 ns]
                         thrpt:  [53.990 MiB/s 54.765 MiB/s 55.522 MiB/s]
                  change:
-                        time:   [-76.353% -75.657% -74.984%] (p = 0.00 < 0.05)
+                        time:   [-76.353% -75.657% -74.984%] 
+                                (p = 0.00 < 0.05)
                         thrpt:  [+299.74% +310.80% +322.89%]
                         Performance has improved.
 
 parser/file             time:   [15.714 us 15.944 us 16.230 us]
                         thrpt:  [20.977 MiB/s 21.354 MiB/s 21.667 MiB/s]
                  change:
-                        time:   [-44.596% -41.849% -38.840%] (p = 0.00 < 0.05)
+                        time:   [-44.596% -41.849% -38.840%] 
+                                (p = 0.00 < 0.05)
                         thrpt:  [+63.505% +71.965% +80.493%]
 ```
 That's a 3x to 4.5x improvement for the lexer!

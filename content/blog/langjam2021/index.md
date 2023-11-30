@@ -133,7 +133,8 @@ Executing Build File
 Parsing Source File '.\examples\comments.sus'
 Checking comments of '.\examples\comments.sus'
 Warning: unresolved `@todo:`: ' @todo: add more code'
-Warning: unresolved `@fixme:`: ' @fixme: maybe this should be `false`?'
+Warning: unresolved `@fixme:`: 
+    ' @fixme: maybe this should be `false`?'
 Executing Source File '.\examples\comments.sus'
 Calling fn `has_comments` with (x = 0) (b = true)
 Calling fn `has_comments` with (x = 1) (b = true)
