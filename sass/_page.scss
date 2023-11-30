@@ -103,7 +103,7 @@ $largescreen-width: 1050px;
             vertical-align: middle;
             padding: 0.1em 0.3em;
             border-radius: 3px;
-            font-size: 0.835em;
+            font-size: 0.75em;
             font-family: "Fira Code", Consolas, "Ubuntu Mono", Menlo, "DejaVu Sans Mono", monospace;
             font-variant-ligatures: none;
         }
@@ -259,7 +259,7 @@ $largescreen-width: 1050px;
 // Small screens like phones.
 @media screen and (max-width: $smallscreen-width) {
     html {
-        font-size: 7px;
+        font-size: 8px;
     }
 
     .cheats>table tr td:nth-child(1) {
@@ -272,7 +272,7 @@ $largescreen-width: 1050px;
 // now a transition zone where we can squeeze a bit more out.
 @media screen and (min-width: $smallscreen-width) and (max-width: $largescreen-width) {
     html {
-        font-size: 9px;
+        font-size: 10px;
     }
 
     fixed-2-column>table tr td:nth-child(1) {
@@ -301,7 +301,7 @@ $largescreen-width: 1050px;
 
 @media screen and (min-width: $largescreen-width) {
     html {
-        font-size: 10px;
+        font-size: 11px;
     }
 
     .book-content {
@@ -338,7 +338,7 @@ $largescreen-width: 1050px;
 @media print {
 
     html {
-        font-size: 7px;
+        font-size: 10px;
     }
 
     noprint {
