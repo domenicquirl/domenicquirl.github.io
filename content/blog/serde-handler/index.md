@@ -1,6 +1,6 @@
 +++
 title = "Being Generic over Zero-Copy Request Handlers" 
-date = 2023-11-02
+date = 2023-11-30
 +++
 
 Aka "I Just Want a Nice Request API" or a story about why it's sometimes difficult to have your cake and eat it too.
