@@ -42,7 +42,7 @@ $largescreen-width: 1050px;
         hr {
             height: 1px;
             padding: 0;
-            margin: 2.7em 0;
+            margin: 2.3em 0;
             overflow: hidden;
             background-color: #e7e7e7;
             border: none;
@@ -100,12 +100,24 @@ $largescreen-width: 1050px;
         }
 
         code {
-            vertical-align: middle;
+            vertical-align: baseline;
             padding: 0.1em 0.3em;
             border-radius: 3px;
-            font-size: 0.75em;
+            font-size: 0.9em;
             font-family: "Fira Code", Consolas, "Ubuntu Mono", Menlo, "DejaVu Sans Mono", monospace;
             font-variant-ligatures: none;
+        }
+
+        p>code {
+            @media (prefers-color-scheme: light) {
+                color: #383a42;
+                background-color: #fafafa;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                color: #f8f8f2;
+                background-color: #272822;
+            }
         }
 
         iframe {
@@ -147,7 +159,7 @@ $largescreen-width: 1050px;
         padding: 0 15px 40px;
 
         p {
-            margin-top: 45px;
+            margin-top: 30px;
             margin-bottom: 0.85em;
             display: block;
             hyphens: auto;
@@ -174,61 +186,14 @@ $largescreen-width: 1050px;
         }
     }
 
-    .day-mode &__content {
-        color: #333;
-
-        blockquote {
-            background-color: #e1f3ff; // border-left: 4px solid #e5e5e5;
-            border: #d1e3ef solid 1px;
-        }
-
-        table {
-            thead {
-                background: hsl(0, 0%, 80%);
-
-            }
-
-            tbody {
-                tr:nth-child(2n) {
-                    background: hsl(0, 0%, 97%);
-                }
-            }
-        }
-
-        code {
-            background: #6e6b5e;
-            color: #f1f1f1;
-        }
-    }
-
-    .night-mode &__content {
-        color: #ccc;
-
-        blockquote {
-            background-color: #00243b; // border-left: 4px solid #e5e5e5;
-            border: #00344b solid 1px;
-        }
-
-        table {
-            thead {
-                background: hsl(0, 0%, 20%);
-            }
-
-            tbody {
-                tr:nth-child(2n) {
-                    background: hsl(0, 0%, 18%);
-                }
-            }
-        }
-    }
-
     sup.footnote-definition-label {
         float: left;
         line-height: normal;
+        margin-right: 2px;
     }
 
     .footnote-definition {
-        padding-bottom: 20px;
+        padding-bottom: 10px;
 
         p {
             margin-top: 5px;

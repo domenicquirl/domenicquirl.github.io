@@ -19,15 +19,15 @@ body {
 // Preliminary background until day-mode / night-mode class is added by Javascript.
 @media (prefers-color-scheme: light) {
     body {
-        background-color: white;
-        color: black;
+        background-color: #eee;
+        color: #222;
     }
 }
 
 @media (prefers-color-scheme: dark) {
     body {
         background-color: #222;
-        color: white;
+        color: #eee;
     }
 }
 

@@ -21,14 +21,16 @@ Hence, I set out to provide a nice interface that would allow a consumer of the 
 Little did I know that what started with this simple, straightforward ambition would become a longer journey through `serde` and its lifetimes, `axum` routers, type erasure and being slapped in the face by compiler errors![^compiler-errors]<span id="fn-compiler-errors"></span>
 In this post, I'll take a step back at the end of this implementation zig-zag and retrace my steps, trying to show where and why things can become complicated, what the compiler may be trying to tell you, and how you _can_ have your cake and eat it to.
 
-## This Post
- - Is an (or, well, several) attempt(s) at writing a convenient request-response API. 
- - Discusses some of the intricacies involved in the quest for low overhead request processing, in particular why zero-copy deserialization of requests makes things more difficult. 
- - Will erase not just types but probably some of our brain cells as well as we try to figure out which type can be referred to from where and why they hell the compiler thinks it's ambiguous again?!?
+## About This Post
+This post is an (or, well, several) attempt(s) at writing a convenient request-response API. 
+It discusses some of the intricacies involved in the quest for low overhead request processing, in particular why zero-copy deserialization of requests makes things more difficult. 
+To deal with Rust's lack of collections over generic types (like a `Vec` of handlers that have different types), we will erase not just types but probably some of our brain cells as well as we try to figure out which type can be referred to from where and why they hell the compiler thinks it's ambiguous again?!?
 
-## This Post is not
- - About a particular message format. While this post was triggered by my attempt to implement message routing for a particular format, I want this post to focus on the complexity of implementing handlers independent of the protocol in use.
- - An explanation of how `axum` is able to magically pass complex types to your web handlers. We'll briefly come across where this happens in `axum`, but we'll be more concerned about how `axum` can _accept and manage_ all these methods with different parameters as routes than how those parameters end up in the correct place at runtime. If you do want to read up some more on `axum`'s "magic handlers", check out [this post](https://lunatic.solutions/blog/magic-handler-functions-in-rust/) by Bernard Kolobara for an explanation and `@alexpusch`'s [`rust-magic-function-params`](https://github.com/alexpusch/rust-magic-function-params) example for a simplified version of the traits involved in making this happen.
+While this post was triggered by my attempt to implement message routing for a particular format, it is not about a particular message format. 
+I want the post to focus on the complexity of implementing handlers independently of the protocol in use.
+It is also not really an explanation of how `axum` is able to magically pass complex types to your web handlers. 
+We'll briefly come across where this happens in `axum`, but we'll be more concerned about how `axum` can _accept and manage_ all these methods with different parameters as routes than how those parameters end up in the correct place at runtime. 
+If you do want to read up some more on `axum`'s "magic handlers", check out [this post](https://lunatic.solutions/blog/magic-handler-functions-in-rust/) by Bernard Kolobara for an explanation and `@alexpusch`'s [`rust-magic-function-params`](https://github.com/alexpusch/rust-magic-function-params) example for a simplified version of the traits involved in making this happen.
 
 ---
 ## Blog Repository
@@ -50,7 +52,11 @@ pub struct Requester;
 pub struct Responder;
 
 impl Requester {
-    pub fn send_request(&self, request: Message, to_service: &str) -> Result<()>;
+    pub fn send_request(
+        &self, 
+        request: Message, 
+        to_service: &str
+    ) -> Result<()>;
     pub fn recv_response(&self) -> Result<Message>;
 }
 
@@ -157,8 +163,9 @@ That is, you can pass a function that takes an `Api::Request` and returns an `Ap
 
 ```rust
 impl Responder {
-    /// Perpetually waits for incoming requests on `self` and handles them with 
-    /// the given `handler`, sending back the computed reply.
+    /// Perpetually waits for incoming requests on `self` and 
+    /// handles them with the given `handler`, sending back the 
+    /// computed reply.
     pub fn serve_forever<A: Api, H>(self, mut handler: H) -> Result<()>
     where
         H: FnMut(A::Request) -> A::Reply,
@@ -167,8 +174,9 @@ impl Responder {
     {
         loop {
             let request = self.next_request()?;
-            let request: A::Request = serde_json::from_slice(&request.data())
-                .map_err(|e| format!("Deserialize error: {e}"))?;
+            let request: A::Request = 
+                serde_json::from_slice(&request.data())
+                    .map_err(|e| format!("Deserialize error: {e}"))?;
             let reply = handler(request);
             let data = serde_json::to_vec_pretty(&reply)
                 .map_err(|e| format!("Serialize error: {e}"))?;
@@ -244,8 +252,9 @@ The request is deserialized _inside_ `serve_forever` so we can pass it to the ha
 That's not something we can really explicitly refer to,[^named-block-lifetimes]<span id="fn-named-block-lifetimes"></span> so maybe this means `serve_forever` just has to be generic over `'de` and the compiler will figure out what lifetime that represents?
 
 ```rust
-/// Perpetually waits for incoming requests on `self` and handles them with the
-/// given `handler`, sending back the computed reply.
+/// Perpetually waits for incoming requests on `self` and 
+/// handles them with the given `handler`, sending back the 
+/// computed reply.
 pub fn serve_forever<'de, A: Api, H>(self, mut handler: H) -> Result<()>
 where
     H: FnMut(A::Request) -> A::Reply,
@@ -254,8 +263,9 @@ where
 {
     loop {
         let request = self.next_request()?;
-        let request: A::Request = serde_json::from_slice(&request.data())
-            .map_err(|e| format!("Deserialize error: {e}"))?;
+        let request: A::Request = 
+            serde_json::from_slice(&request.data())
+                .map_err(|e| format!("Deserialize error: {e}"))?;
         let reply = handler(request);
         let data = serde_json::to_vec_pretty(&reply)
             .map_err(|e| format!("Serialize error: {e}"))?;
@@ -279,9 +289,11 @@ error[E0597]: `data` does not live long enough
 59 |             let data = serde_json::from_slice(&data)
    |                 ------------------------------^^^^^-
    |                 |                             |
-   |                 |                             borrowed value does not 
+   |                 |                             borrowed value 
+   |                 |                             does not 
    |                 |                             live long enough
-   |                 argument requires that `data` is borrowed for `'de`
+   |                 argument requires that `data` is borrowed 
+   |                 for `'de`
 ...
 66 |         }
    |         - `data` dropped here while still borrowed
@@ -301,8 +313,8 @@ error: implementation of `Deserialize` is not general enough
    |
    = note: `UppercaseRequest<'_>` must implement `Deserialize<'0>`, 
            for any lifetime `'0`...
-   = note: ...but `UppercaseRequest<'_>` actually implements `Deserialize<'1>`, 
-           for some specific lifetime `'1`
+   = note: ...but `UppercaseRequest<'_>` actually implements 
+           `Deserialize<'1>`, for some specific lifetime `'1`
 ```
 
 Don't be confused by the lifetime names `'0` and `'1` that the compiler uses.
@@ -320,7 +332,8 @@ One way to do this would be to make the `Api` trait generic over a lifetime as w
 pub trait Api<'de> {
     /// The service whose API is extended with this implementation.
     ///
-    /// `Request`s of the implementing type will be sent to this service.
+    /// `Request`s of the implementing type will be sent to this 
+    /// service.
     const SERVICE: &'static str;
 
     /// The request body.
@@ -341,7 +354,8 @@ With GATs, we can move the lifetime for the requests onto the `Request` associat
 pub trait Api {
     /// The service whose API is extended with this implementation.
     ///
-    /// `Request`s of the implementing type will be sent to this service.
+    /// `Request`s of the implementing type will be sent to this 
+    /// service.
     const SERVICE: &'static str;
 
     /// The request body.
@@ -385,10 +399,10 @@ We'll define two new traits, `HandlerOn<'req>` and `Handler`, that represent han
 ```rust
 /// A function that can handle [`A::Request<'de>`](Api::Request) 
 /// for `'de == 'req`.
-pub trait HandlerOn<'req, A: Api>: FnMut(A::Request<'req>) -> A::Reply {}
+pub trait HandlerOn<'req, A: Api>: 
+    FnMut(A::Request<'req>) -> A::Reply {}
 impl<'req, A: Api, F> HandlerOn<'req, A> for F 
-    where F: FnMut(A::Request<'req>) -> A::Reply
-{}
+    where F: FnMut(A::Request<'req>) -> A::Reply {}
 
 /// A function that can handle [`A::Request<'de>`](Api::Request) 
 /// for any `'de`.
@@ -454,11 +468,12 @@ To start with, in addition to the `SERVICE` name we'll also give each `Api` its 
 pub trait Api {
     /// The service whose API is extended with this implementation.
     ///
-    /// `Request`s of the implementing type will be sent to this service.
+    /// `Request`s of the implementing type will be sent to this 
+    /// service.
     const SERVICE: &'static str;
 
-    /// The unique name of the API that identifies the kind of `Request` 
-    /// to the `SERVICE`.
+    /// The unique name of the API that identifies the kind of 
+    /// `Request` to the `SERVICE`.
     const NAME: &'static str;
 
     /// The request body.
@@ -484,18 +499,22 @@ We can then provide APIs to get an `ApiRouter`, add new handlers and run our `se
 impl ApiRouter {
     /// Create a new `Router`.
     ///
-    /// Unless you add additional routes via [`register_handler`], this
-    /// will respond with `InvalidRequest` to all requests.
+    /// Unless you add additional routes via [`register_handler`], 
+    /// this will respond with `InvalidRequest` to all requests.
     pub fn new() -> Self {
         Self { handlers: HashMap::new() }
     }
 
     /// Add a new handler for API requests of type `A`.
     ///
-    /// This will make the router route all requests of type `A` to the given 
-    /// `handler` if the request data can be successfully deserialized into 
-    /// [`A::Request`]. The `handler` may be a function name or a closure.
-    pub fn register_handler<A: Api, H: Handler<A>>(mut self, handler: H) -> Self
+    /// This will make the router route all requests of type `A` to 
+    /// the given `handler` if the request data can be successfully 
+    /// deserialized into [`A::Request`]. The `handler` may be a 
+    /// function name or a closure.
+    pub fn register_handler<A: Api, H: Handler<A>>(
+        mut self, 
+        handler: H
+    ) -> Self
     where
         H: 'static,
     {
@@ -503,9 +522,9 @@ impl ApiRouter {
         self
     }
 
-    /// Perpetually waits for incoming requests on `socket` and handles them 
-    /// with the handler registered for their route, sending back the computed
-    /// reply.
+    /// Perpetually waits for incoming requests on `socket` and 
+    /// handles them with the handler registered for their route, 
+    /// sending back the computed reply.
     pub fn serve_on(mut self, socket: Responder) -> Result<()> {
         loop {
             let Message { api_name, data } = socket.next_request()?;
@@ -513,7 +532,9 @@ impl ApiRouter {
             let handler = self
                 .handlers
                 .get_mut(api_name.as_str())
-                .ok_or_else(|| format!("No handler for '{api_name}'",))?;
+                .ok_or_else(|| {
+                    format!("No handler for '{api_name}'")
+                })?;
             let reply = (handler.0)(&data)?;
             let response = Message {
                 api_name,
@@ -534,7 +555,8 @@ error[E0412]: cannot find type `A` in this scope
   --> src\multiple_handlers1.rs:27:49
    |
 27 |     handlers: HashMap<&'static str, dyn Handler<A>>,
-   |                                                 ^ not found in this scope
+   |                                                 ^ not found in 
+   |                                                   this scope
    |
 help: you might be missing a type parameter
    |
@@ -551,7 +573,8 @@ That would look like this:
 ```rust
 /// A function that can handle [`A::Request<'de>`](Api::Request) 
 /// for `'de == 'req`.
-pub trait HandlerOn<'req>: FnMut(Self::Api::Request<'req>) -> Self::Api::Reply
+pub trait HandlerOn<'req>: 
+    FnMut(Self::Api::Request<'req>) -> Self::Api::Reply
 {
     type Api: Api;
 }
@@ -578,9 +601,9 @@ error[E0223]: ambiguous associated type
    |     -> Self::Api::Reply {
    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^
    |
-help: if there were a trait named `Example` with associated type `Request` 
-      implemented for `<Self as HandlerOn<'req>>::Api`, you could use the 
-      fully-qualified path
+help: if there were a trait named `Example` with associated type 
+      `Request` implemented for `<Self as HandlerOn<'req>>::Api`, 
+      you could use the fully-qualified path
    |
 77 | pub trait HandlerOn<'req>: FnMut(<<Self as HandlerOn<'req>>::Api as Example>::Request) -> Self::Api::Reply {
    |                 
@@ -615,7 +638,8 @@ impl Api for Api2 {
     type Reply = String;
 }
 
-// Should this implement `Handler<Api = Api1>` or `Handler<Api = Api2>`?
+// Should this implement `Handler<Api = Api1>` 
+// or `Handler<Api = Api2>`?
 fn handler(request: String) -> String { /* ... */ }
 ```
 
@@ -663,9 +687,9 @@ error[E0038]: the trait `Handler` cannot be made into an object
    |                                         ^^^^^^^^^^^ 
    |              `Handler` cannot be made into an object
    |
-note: for a trait to be "object safe" it needs to allow building a vtable to 
-      allow the call to be resolvable dynamically; for more information visit 
-      <https://doc.rust-lang.org/reference/items/traits.html#object-safety>
+note: for a trait to be "object safe" it needs to allow building a 
+      vtable to allow the call to be resolvable dynamically; for more 
+      information visit <https://doc.rust-lang.org/reference/items/traits.html#object-safety>
   --> src\multiple_handlers4.rs:78:5
    |
 78 | /     FnMut(
@@ -723,8 +747,10 @@ But before that, a transformation happens: the actual `our_handler` function pas
 ```rust
 self.on_endpoint(
     filter,
-    //                             our `our_handler` function vvvvvvv
-    MethodEndpoint::BoxedHandler(BoxedIntoRoute::from_handler(handler)),
+    MethodEndpoint::BoxedHandler(
+        // our `our_handler` function vvvvvv
+        BoxedIntoRoute::from_handler(handler)
+    ),
 )
 ```
 
@@ -734,7 +760,9 @@ What exactly are those "boxed" types?
 Well, `axum` has [an entire module](https://docs.rs/axum/0.6.20/src/axum/boxed.rs.html) of them and the constructor that is used here, `BoxedIntoRoute::from_handler`, as a very interesting signature:
 
 ```rust
-pub(crate) struct BoxedIntoRoute<S, B, E>(Box<dyn ErasedIntoRoute<S, B, E>>);
+pub(crate) struct BoxedIntoRoute<S, B, E>(
+    Box<dyn ErasedIntoRoute<S, B, E>>
+);
 
 impl<S, B> BoxedIntoRoute<S, B, Infallible>
 where
@@ -848,10 +876,15 @@ where
             let state = &state;
 
             $(
-                let $ty = match $ty::from_request_parts(&mut parts, state).await {
-                    Ok(value) => value,
-                    Err(rejection) => return rejection.into_response(),
-                };
+                let $ty = 
+                    match $ty::from_request_parts(&mut parts, state)
+                        .await 
+                    {
+                        Ok(value) => value,
+                        Err(rejection) => {
+                            return rejection.into_response();
+                        }
+                    };
             )*
 
             let req = Request::from_parts(parts, body);
@@ -906,8 +939,9 @@ impl BoxedHandler {
         H: 'static,
     {
         let handler = move |request_data: &[u8]| -> Result<Vec<u8>> {
-            let request: A::Request<'_> = serde_json::from_slice(request_data)
-                .map_err(|e| format!("Deserialize error: {e}"))?;
+            let request: A::Request<'_> = 
+                serde_json::from_slice(request_data)
+                    .map_err(|e| format!("Deserialize error: {e}"))?;
             let reply = handler(request);
             let reply = serde_json::to_vec_pretty(&reply)
                 .map_err(|e| format!("Serialize error: {e}"))?;
@@ -937,11 +971,14 @@ pub struct ApiRouter {
 impl ApiRouter {
     /// Add a new handler for API requests of type `A`.
     ///
-    /// This will make the router route all requests of type `A` to the given 
-    /// `handler` if the request data can be successfully deserialized into 
-    /// [`A::Request`](Api::Request). The `handler` may be a function name or 
-    /// a closure.
-    pub fn register_handler<A: Api, H: Handler<A>>(mut self, handler: H) -> Self
+    /// This will make the router route all requests of type `A` to 
+    /// the given `handler` if the request data can be successfully 
+    /// deserialized into [`A::Request`](Api::Request). The `handler` 
+    /// may be a function name or a closure.
+    pub fn register_handler<A: Api, H: Handler<A>>(
+        mut self, 
+        handler: H
+    ) -> Self
     where
         H: 'static,
     {
