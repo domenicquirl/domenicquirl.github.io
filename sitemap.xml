@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://domenicquirl.github.io/</loc>
+    </url>
+    <url>
+        <loc>https://domenicquirl.github.io/blog/</loc>
+    </url>
+    <url>
+        <loc>https://domenicquirl.github.io/blog/langjam2021/</loc>
+        <lastmod>2021-08-26</lastmod>
+    </url>
+    <url>
+        <loc>https://domenicquirl.github.io/blog/parsing-basics/</loc>
+        <lastmod>2021-05-05</lastmod>
+    </url>
+    <url>
+        <loc>https://domenicquirl.github.io/blog/serde-handler/</loc>
+        <lastmod>2023-11-30</lastmod>
+    </url>
+</urlset>
