@@ -1048,7 +1048,6 @@ We've seen this error already when we were working with `Deserialize<'de>`, we k
 But I neither know why the compiler infers one over the other here, nor how I would explicitly specify that I want one or the other (aside from having a nameable lifetime in scope that the reference should use).
 If you know more, please get in touch.
 
----
 [^compiler-errors]: While I think some of the errors were some of the more cryptic ones I have seen so far, they still state fairly clearly what the problem is - if you know what they are talking about at all. Lifetimes and higher-ranked bounds are a tricky area to begin with, so I don't particularly fault the compiler and refrained from attributing them with things like "confusing", or "weird", or the above "cryptic" and I am not trying to summon Esteban.
 
 [^auto-features]: It's unfortunate that the feature has to be specified even though we can (and I have) set the `required-features` for an example in `Cargo.toml`. You'll currently get an error from cargo that tells you to add the correct `--feature` flag if you try running the example without it, so clearly `cargo` knows what's up. But this is one of these issues that are a lot more difficult to actually change than it seems on the surface - if you're curious, you can check out the `cargo` issue for this at [`cargo#4663`](https://github.com/rust-lang/cargo/issues/4663).

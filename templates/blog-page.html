@@ -16,9 +16,13 @@
 {% endblock scripts %}
 
 {% block content %}
-<h1 class="title" style="padding-top: 30px;">
+<h1 class="title" style="padding-top: 30px; text-align: center;">
     {{ page.title }}
 </h1>
-<p class="subtitle"><strong>{{ page.date }}</strong></p>
+<p style="text-align: center;">
+    <strong>{{ page.date }}</strong>
+    <br />
+    {{ page.word_count }} words
+</p>
 {{ page.content | safe }}
 {% endblock content %}

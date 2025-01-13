@@ -243,7 +243,6 @@ Sometimes it is due time for a re-write, but maybe sometimes you can build anoth
 
 Embrace the re-writes, but also embrace the cursed.
 
----
 [^gmtk-jams]: All of these themes are taken from recent [GMTK game jams](https://itch.io/jam/gmtk-2021).
 
 [^syntax-trees]: I'm assuming you know what a syntax tree is. If you don't, and if the abbreviation AST confuses you, maybe read [the introduction to my post on parsing basics](http://domenicquirl.github.io/blog/parsing-basics/#a-high-level-view) or [the Wikipedia article on abstract syntax trees](https://en.m.wikipedia.org/wiki/Abstract_syntax_tree) before you go on. 

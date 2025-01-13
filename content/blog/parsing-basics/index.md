@@ -3176,7 +3176,6 @@ If you do get stuck somewhere, remember that there is always someone around in t
 And instead of banging your head against that wall, maybe go outside, look at some real trees, and ponder why they are upside down.
 
 
----
 [^stmt-expr]: In Rust, this is somewhat confusing, because most expressions can also be statements. For example, you can `break` a value from a `loop`.
 
 [^shift-ops]: We will not add binary left- and right-shift operators (`<<` and `>>`) in this post, but if we did they'd be another source of ambiguity here. 
