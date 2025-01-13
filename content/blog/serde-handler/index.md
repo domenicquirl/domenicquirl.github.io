@@ -17,7 +17,7 @@ It is inconvenient and cumbersome to write out the same code for checking a `Mes
 Not only is this repetitive and error prone, it forces the user of the library to think at a lower level conceptually than they would want to: instead of thinking about their service and its API, they have to think about the transport mechanism and message frames.
 
 Hence, I set out to provide a nice interface that would allow a consumer of the library to define their API on a logical level.
-Little did I know that what started with this simple, straightforward ambition would become a longer journey through `serde` and its lifetimes, `axum` routers, type erasure and being slapped in the face by compiler errors![^compiler-errors]<span id="fn-compiler-errors"></span>
+Little did I know that what started with this simple, straightforward ambition would become a longer journey through `serde` and its lifetimes, `axum` routers, type erasure and being slapped in the face by compiler errors![^compiler-errors]
 In this post, I'll take a step back at the end of this implementation zig-zag and retrace my steps, trying to show where and why things can become complicated, what the compiler may be trying to tell you, and how you _can_ have your cake and eat it to.
 
 ## About This Post
@@ -37,7 +37,7 @@ If you do want to read up some more on `axum`'s "magic handlers", check out [thi
 The example code in this article is publicly available at [https://github.com/<wbr>domenicquirl/<wbr>blog/<wbr>tree/<wbr>master/<wbr>serde-<wbr>handler](https://github.com/domenicquirl/blog/tree/master/serde-handler).
 The library crate there contains a submodule for each attempt and a specific attempt can be compiled with `cargo check --features <attempt>`, where `<attempt>` is given below for each variation.
 For attempts where the library code compiles, there will also be an example that either demonstrates the code is working or shows issues that arise when trying to use it.
-To run an example, run `cargo run --example <attempt> --features <attempt>`.[^auto-features]<span id="fn-auto-features"></span>
+To run an example, run `cargo run --example <attempt> --features <attempt>`.[^auto-features]
 
 ---
 
@@ -93,7 +93,7 @@ impl Api for FooRequest {
 ```
 
 This already allows us to write a much nicer interface for our `Requester`.
-For the purpose of this post and the examples, we'll use `serde_json` to serialize and deserialize our Rust request and response types to and from bytes:[^bounding-the-request-type]<span id="fn-bounding-the-request-type"></span>
+For the purpose of this post and the examples, we'll use `serde_json` to serialize and deserialize our Rust request and response types to and from bytes:[^bounding-the-request-type]
 
 ```rust
 impl Requester {
@@ -158,7 +158,7 @@ Look ma, no `for_service` anymore!
 However, we're missing a counterpart on the `Responder` side.
 We can implement a similar workflow to the `Requester` by running the same steps in reverse, in a loop so the `Responder` fetches and responds to one request after the other.
 Instead of the name of the service that takes the request (which, on the service's side, is just the `Requester` itself), our endpoint takes the _logical_ message handler.
-That is, you can pass a function that takes an `Api::Request` and returns an `Api::Reply` and the `Responder` will continuously feed it with new requests that it has already decoded and take care of serializing and wrapping the `Reply` as well:[^return-errors]<span id="fn-return-errors"></span>
+That is, you can pass a function that takes an `Api::Request` and returns an `Api::Reply` and the `Responder` will continuously feed it with new requests that it has already decoded and take care of serializing and wrapping the `Reply` as well:[^return-errors]
 
 ```rust
 impl Responder {
@@ -200,7 +200,7 @@ We can see the requirement that we can deserialize into an owned `Request` in th
 
 Most of the time, we all probably primarily use `serde` by deriving `Serialize` and / or `Deserialize` for our types so they work with whatever other library we want to use that implements or uses a data format (such as `serde_json` for JSON or a webserver crate that uses `serde_json` internally to help you build a JSON Web API).
 If that is the case for you too, you might not have come across `DeserializeOwned` before.
-But the derive macro for the `Deserialize` trait actually hides the fact that the trait has a lifetime: the actual definition of `Deserialize` is `trait Deserialize<'de>: Sized`.[^serialize]<span id="fn-serialize"></span>
+But the derive macro for the `Deserialize` trait actually hides the fact that the trait has a lifetime: the actual definition of `Deserialize` is `trait Deserialize<'de>: Sized`.[^serialize]
 
 The `serde` documentation contains [its own section](https://serde.rs/lifetimes.html) about what this lifetime means and what it is for.
 For our purposes, the most important feature that the `'de` lifetime enables is _zero-copy deserialization_.
@@ -248,7 +248,7 @@ But copying every single request is a lot of work, so could we support zero-copy
 We'll need to change the bound on `serve_forever` away from `DeserializeOwned` to `Deserialize<'de>` with a lifetime.
 But... what lifetime? Where does it come from?
 The request is deserialized _inside_ `serve_forever` so we can pass it to the handler, so the lifetime of the input buffer and the lifetime of the Rust request object are both some subset of the current function.
-That's not something we can really explicitly refer to,[^named-block-lifetimes]<span id="fn-named-block-lifetimes"></span> so maybe this means `serve_forever` just has to be generic over `'de` and the compiler will figure out what lifetime that represents?
+That's not something we can really explicitly refer to,[^named-block-lifetimes] so maybe this means `serve_forever` just has to be generic over `'de` and the compiler will figure out what lifetime that represents?
 
 ```rust
 /// Perpetually waits for incoming requests on `self` and 
@@ -483,7 +483,7 @@ pub trait Api {
 }
 ```
 
-We'll send the name as part of the underlying protocol `Message`.[^api-name]<span id="fn-api-name"></span>
+We'll send the name as part of the underlying protocol `Message`.[^api-name]
 Next, we want to have our own router type that maps the API names of a service to their correct handlers.
 
 ```rust
@@ -566,7 +566,7 @@ help: you might be missing a type parameter
 It tries to help us by suggesting we make the router generic as well, but we don't want that:
 then a service could only have an `ApiRouter<SomeRequest>` for a fixed request type `SomeRequest` - exactly what we're trying to fix right now!
 
-How can we get rid of `Handler`'s generic parameter... maybe we can move the `A` _inside_ the trait, as an associated type?[^explicit-trait]<span id="fn-explicit-trait"></span>
+How can we get rid of `Handler`'s generic parameter... maybe we can move the `A` _inside_ the trait, as an associated type?[^explicit-trait]
 That would look like this:
 
 ```rust
@@ -1049,18 +1049,18 @@ But I neither know why the compiler infers one over the other here, nor how I wo
 If you know more, please get in touch.
 
 ---
-[^compiler-errors]: While I think some of the errors were some of the more cryptic ones I have seen so far, they still state fairly clearly what the problem is - if you know what they are talking about at all. Lifetimes and higher-ranked bounds are a tricky area to begin with, so I don't particularly fault the compiler and refrained from attributing them with things like "confusing", or "weird", or the above "cryptic" and I am not trying to summon Esteban.<a href="#fn-compiler-errors" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^compiler-errors]: While I think some of the errors were some of the more cryptic ones I have seen so far, they still state fairly clearly what the problem is - if you know what they are talking about at all. Lifetimes and higher-ranked bounds are a tricky area to begin with, so I don't particularly fault the compiler and refrained from attributing them with things like "confusing", or "weird", or the above "cryptic" and I am not trying to summon Esteban.
 
-[^auto-features]: It's unfortunate that the feature has to be specified even though we can (and I have) set the `required-features` for an example in `Cargo.toml`. You'll currently get an error from cargo that tells you to add the correct `--feature` flag if you try running the example without it, so clearly `cargo` knows what's up. But this is one of these issues that are a lot more difficult to actually change than it seems on the surface - if you're curious, you can check out the `cargo` issue for this at [`cargo#4663`](https://github.com/rust-lang/cargo/issues/4663). <a href="#fn-auto-features" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^auto-features]: It's unfortunate that the feature has to be specified even though we can (and I have) set the `required-features` for an example in `Cargo.toml`. You'll currently get an error from cargo that tells you to add the correct `--feature` flag if you try running the example without it, so clearly `cargo` knows what's up. But this is one of these issues that are a lot more difficult to actually change than it seems on the surface - if you're curious, you can check out the `cargo` issue for this at [`cargo#4663`](https://github.com/rust-lang/cargo/issues/4663).
 
-[^bounding-the-request-type]: In the example code, I've used a slightly different signature for `request`: there, it is written as `fn request<A: Api<Request = A>>` and takes the request as an `A` instead of an `A::Request`. Constraining the implementation of `Api` to be implemented on the request type itself is less flexible, but allows calling `request` without specifying `A` with a turbofish (as `requester.request::<FooRequest>(req)`) because the compiler is able to infer the generic parameter from the argument type. But it's also a bit ugly and requires bounding `Api` itself by `Serialize`, so I'm leaving it as a footnote. <a href="#fn-bounding-the-request-type" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^bounding-the-request-type]: In the example code, I've used a slightly different signature for `request`: there, it is written as `fn request<A: Api<Request = A>>` and takes the request as an `A` instead of an `A::Request`. Constraining the implementation of `Api` to be implemented on the request type itself is less flexible, but allows calling `request` without specifying `A` with a turbofish (as `requester.request::<FooRequest>(req)`) because the compiler is able to infer the generic parameter from the argument type. But it's also a bit ugly and requires bounding `Api` itself by `Serialize`, so I'm leaving it as a footnote.
 
-[^return-errors]: I'm presupposing that the logical handler is "infallible", which just means that if there _is_ an error with or while processing the request, this will be communicated to the requester via the `Reply` as opposed to having the handler fail (by allowing it to return a `Result<Reply, E>` with some error). Since the protocol format and also (de-)serialization are handled by our API, any remaining error can only be a logical one. When implementing `Api`, this can be represented by making `Reply` be a `Result<T>`, using an `enum FooReply` as the `Reply` type that contains an `InvalidRequest` variant, or similar. <a href="#fn-return-errors" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^return-errors]: I'm presupposing that the logical handler is "infallible", which just means that if there _is_ an error with or while processing the request, this will be communicated to the requester via the `Reply` as opposed to having the handler fail (by allowing it to return a `Result<Reply, E>` with some error). Since the protocol format and also (de-)serialization are handled by our API, any remaining error can only be a logical one. When implementing `Api`, this can be represented by making `Reply` be a `Result<T>`, using an `enum FooReply` as the `Reply` type that contains an `InvalidRequest` variant, or similar.
 
-[^serialize]: This is not the case for `Serialize`. When you serialize a type to some format, you probably intend to send the resulting bytes somewhere else, e.g. over the network to make a web request. It would be of little use to be able to borrow from the Rust type from within the serialized bytes, and besides you cannot serialize to a single byte buffer or string of which only a subsection is a reference to the original type and the rest is owned bytes, so `serde` doesn't support it. <a href="#fn-serialize" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^serialize]: This is not the case for `Serialize`. When you serialize a type to some format, you probably intend to send the resulting bytes somewhere else, e.g. over the network to make a web request. It would be of little use to be able to borrow from the Rust type from within the serialized bytes, and besides you cannot serialize to a single byte buffer or string of which only a subsection is a reference to the original type and the rest is owned bytes, so `serde` doesn't support it. 
 
-[^named-block-lifetimes]: No, [`label-break-value`](https://github.com/rust-lang/rfcs/pull/2046) doesn't count here. <a href="#fn-named-block-lifetimes" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^named-block-lifetimes]: No, [`label-break-value`](https://github.com/rust-lang/rfcs/pull/2046) doesn't count here.
 
-[^api-name]: If the underlying protocol supports it, the API (as well as the service) could also be identified by a numeric ID or some other, more compact identifier. I'll stick to string names here, though, since it makes the examples more readable. <a href="#fn-api-name" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^api-name]: If the underlying protocol supports it, the API (as well as the service) could also be identified by a numeric ID or some other, more compact identifier. I'll stick to string names here, though, since it makes the examples more readable. 
 
-[^explicit-trait]: Note that there is no way to do this with the original bound of `H: for<'de> FnMut(A::Request<'de>) -> A::Reply`. There is simply no place in the syntax where we could even _state_ an associated type. This might already give you an idea of how well this is going to turn out... <a href="#fn-explicit-trait" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^explicit-trait]: Note that there is no way to do this with the original bound of `H: for<'de> FnMut(A::Request<'de>) -> A::Reply`. There is simply no place in the syntax where we could even _state_ an associated type. This might already give you an idea of how well this is going to turn out... 

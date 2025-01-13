@@ -46,7 +46,7 @@ By "parsing", we mean the process of transforming some input text, for example a
 **Why a tree?** Programs in most languages are already organized _hierarchically_.
 Think about Rust: You have _crates_ (libraries or binaries), which can house multiple _modules_.
 Each module can define an arbitrary number of _items_ such as _structs_, _traits_, _functions_ or _constants_.
-A function is a sequence of multiple _statements_ like _variable assignments_, _loops_, _conditionals_ (`if`), etc[^stmt-expr]<span id="fn-stmt-expr"></span>.
+A function is a sequence of multiple _statements_ like _variable assignments_, _loops_, _conditionals_ (`if`), etc[^stmt-expr].
 
 Statements are subdivided further into their components, until at some point we reach some kind of "basic building blocks" of our language and can go no further.
 For example, a variable assignment in Rust consists of the keyword `let`, a variable name, an equals sign `=`, an _expression_ that represents the new value of the variable, and a closing semicolon `;`.
@@ -523,7 +523,7 @@ pub(crate) const fn unambiguous_single_char(c: char) -> Option<TokenKind> {
 ```
 The method is essentially the reverse of the `Display` implementation, but only for tokens that are one character long _and cannot be the start of anything else_.
 So it includes `+` and most of the brackets, but, for example, it does not include `=`, because of the possible `==`, and `/`, because that can also be the start of a comment.
-Angle brackets are absent because they can also be the start of `<=` and `>=`[^shift-ops]<span id="fn-shift-ops"></span>.
+Angle brackets are absent because they can also be the start of `<=` and `>=`[^shift-ops].
 
 We can also start thinking about what to do when the user inputs something we don't know (yet).
 If we can't make a token at the start of the input, we'll look ahead until we can and emit an `Error` token for the characters we've had to skip over:
@@ -979,7 +979,7 @@ impl<'input> Lexer<'input> {
 ```
 If the simpler cases don't trigger, we iterate over all our rules and, for each `rule`, check if it `matches` the `input`.
 We then select _the rule that matches the longest piece of the input_, that is, the most input characters.
-This choice is commonly known as [the "maximal munch" principle](https://en.m.wikipedia.org/wiki/Maximal_munch) and makes it so two successive `=` become `==`[^max-munch]<span id="fn-max-munch"></span>.
+This choice is commonly known as [the "maximal munch" principle](https://en.m.wikipedia.org/wiki/Maximal_munch) and makes it so two successive `=` become `==`[^max-munch].
 Moreover, it is consistent with grouping a sequence of digits all together as an `Int`, or letters as an `Identifier` (which we'll do next).
 Note also that we decide to resolve conflicts between tokens of _the same length_ by choosing the rule that was written first.
 We will write the rules from least to most general, so things like identifiers will be plugged in at the back.
@@ -3080,7 +3080,7 @@ impl<'input> Iterator for LogosLexer<'input> {
 ```
 The `spanned()` function that we call on the `LogosToken::lexer` generated for us by `logos` turns the generated lexer (which is also an iterator, like ours) into an iterator that yields pairs of `(token_kind, span)`.
 Because we have already defined a method to get the `TokenKind` of a `LogosToken`, these pairs are easy to convert to our `Token`s.
-The rest of the iterator implementation is similar to the `CustomLexer` one: running our rules is now replaced with calling the generated lexer, we stick an extra EOF token at the end, done.[^logos-eof]<span id="fn-logos-eof"></span>
+The rest of the iterator implementation is similar to the `CustomLexer` one: running our rules is now replaced with calling the generated lexer, we stick an extra EOF token at the end, done.[^logos-eof]
 
 We can now quickly toggle between either lexer by defining the newly freed type name `Lexer` as an alias for the lexer we currently want:
 ```rust
@@ -3177,11 +3177,11 @@ And instead of banging your head against that wall, maybe go outside, look at so
 
 
 ---
-[^stmt-expr]: In Rust, this is somewhat confusing, because most expressions can also be statements. For example, you can `break` a value from a `loop`. <a href="#fn-stmt-expr" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^stmt-expr]: In Rust, this is somewhat confusing, because most expressions can also be statements. For example, you can `break` a value from a `loop`.
 
-[^shift-ops]: We will not add binary left- and right-shift operators (`<<` and `>>`) in this post, but if we did they'd be another source of ambiguity here. <a href="#fn-shift-ops" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^shift-ops]: We will not add binary left- and right-shift operators (`<<` and `>>`) in this post, but if we did they'd be another source of ambiguity here. 
 
-[^max-munch]: Be careful for which character sequences you introduce combined lexer tokens. Equality operators are usually fine, but for some character combinations munching them maximally may clash with other viable implementations. See the "Drawbacks" section of the Wikipedia article for some examples. <a href="#fn-max-munch" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^max-munch]: Be careful for which character sequences you introduce combined lexer tokens. Equality operators are usually fine, but for some character combinations munching them maximally may clash with other viable implementations. See the "Drawbacks" section of the Wikipedia article for some examples. 
 
-[^logos-eof]: I just stuck in `(0..0)` as the span of the EOF token, mostly because we don't actually use that span anywhere and I couldn't be bothered. Since we have access to all previous spans, it is also not difficult to track the end of the last span and then go from there. Take that as an exercise for the reader, if you want. <a href="#fn-logos-eof" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^logos-eof]: I just stuck in `(0..0)` as the span of the EOF token, mostly because we don't actually use that span anywhere and I couldn't be bothered. Since we have access to all previous spans, it is also not difficult to track the end of the last span and then go from there. Take that as an exercise for the reader, if you want. 
  

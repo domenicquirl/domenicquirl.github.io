@@ -38,7 +38,7 @@ Given that it was organized by Jonathan Turner, who was very involved with TypeS
 
 _The_ question before the jam was which theme they would choose.
 A jam theme needs to be general enough to allow a wide range of interpretations from participants.
-Game jams often go somewhat abstract with this, having themes like 'Joined Together', 'Out of Control', or 'GENTRE, but you can't MECHANIC'[^gmtk-jams]<span id="fn-gmtk-jams"></span>.
+Game jams often go somewhat abstract with this, having themes like 'Joined Together', 'Out of Control', or 'GENRE, but you can't MECHANIC'[^gmtk-jams].
 Arguably, finding a theme is harder if you're specific to programming languages (but feel free to disagree).
 
 When the jam came around, it's theme was **First-Class Comments**.
@@ -73,7 +73,7 @@ So, what kind of language _did_ I make with all of this randomly newfound author
 For me, the thing that immediately came to mind when I read 'first-class comments' was meta-programming.
 I don't know why, it was just the context in which I could see comments-as-values being the most useful.
 Cause sure, sticking a comment in a variable like `let x = /* bar */;` is fun and all, but what does that let you do?
-If you have access to a program's syntax tree however, and you have a parser that preserves comments, and then you can **inspect and manipulate** the syntax tree... well, then it's not the compiler that decides what effects comments in your program will have - it's **You** who decides[^syntax-trees]<span id="fn-syntax-trees"></span>!
+If you have access to a program's syntax tree however, and you have a parser that preserves comments, and then you can **inspect and manipulate** the syntax tree... well, then it's not the compiler that decides what effects comments in your program will have - it's **You** who decides[^syntax-trees]!
 
 Enter _Suslang_.
 (Yes, the language is called Suslang and our team name was ඞ. 
@@ -244,6 +244,6 @@ Sometimes it is due time for a re-write, but maybe sometimes you can build anoth
 Embrace the re-writes, but also embrace the cursed.
 
 ---
-[^gmtk-jams]: All of these themes are taken from recent [GMTK game jams](https://itch.io/jam/gmtk-2021). <a href="#fn-gmtk-jams" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^gmtk-jams]: All of these themes are taken from recent [GMTK game jams](https://itch.io/jam/gmtk-2021).
 
-[^syntax-trees]: I'm assuming you know what a syntax tree is. If you don't, and if the abbreviation AST confuses you, maybe read [the introduction to my post on parsing basics](http://domenicquirl.github.io/blog/parsing-basics/#a-high-level-view) or [the Wikipedia article on abstract syntax trees](https://en.m.wikipedia.org/wiki/Abstract_syntax_tree) before you go on. <a href="#fn-syntax-trees" class="footnote-backref" role="doc-backlink">↩︎</a>
+[^syntax-trees]: I'm assuming you know what a syntax tree is. If you don't, and if the abbreviation AST confuses you, maybe read [the introduction to my post on parsing basics](http://domenicquirl.github.io/blog/parsing-basics/#a-high-level-view) or [the Wikipedia article on abstract syntax trees](https://en.m.wikipedia.org/wiki/Abstract_syntax_tree) before you go on. 
