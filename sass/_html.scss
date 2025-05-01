@@ -44,7 +44,7 @@ h6 {
     margin-bottom: 10px;
 }
 
-footer {
+footer:not(.footnotes) {
     text-align: center;
     color: gray;
     font-size: 15pt;
@@ -63,7 +63,7 @@ footer {
     }
 }
 
-footer::after {
+footer:not(.footnotes)::after {
     content: " ";
     display: table;
     width: 1px;
